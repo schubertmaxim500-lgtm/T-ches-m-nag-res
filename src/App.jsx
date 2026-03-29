@@ -2,53 +2,54 @@ import { useState, useEffect, useRef } from "react";
 
 const SUPABASE_URL = "https://nbxiydhjlhjvuaggaxve.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Re31HJlpQz46zZxTc6l_VA_IxTCCfoa";
+const ONESIGNAL_APP_ID = "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631";
+const ONESIGNAL_API_KEY = "os_v2_app_mxpb7cy5nzdpnpsog227nr7wghslkoilrqwuubeungkjd774fmkxc57i64x7mw4lg5m4c2zsv7rpxs2zn3vlskgbsf5e2awp2kpepmy";
 
-async function dbGet() {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`, {
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` }
-  });
-  const d = await r.json();
-  return d[0] || null;
+async function dbGet(){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
+  const d=await r.json();return d[0]||null;
 }
-async function dbSet(patch) {
-  await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`, {
-    method: "PATCH",
-    headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() })
-  });
+async function dbSet(patch){
+  await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
+}
+async function uploadPhoto(file,key){
+  const ext=file.name.split('.').pop();
+  const path=`${key.replace(/[|]/g,'_')}.${ext}`;
+  await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":file.type,"x-upsert":"true"},body:file});
+  return `${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`;
+}
+async function sendPushNotification(title,message){
+  try{
+    await fetch("https://onesignal.com/api/v1/notifications",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Key ${ONESIGNAL_API_KEY}`},body:JSON.stringify({app_id:ONESIGNAL_APP_ID,included_segments:["All"],headings:{fr:title,en:title},contents:{fr:message,en:message},url:"https://levasseur-schubert-family-chores.vercel.app"})});
+  }catch(e){console.error("Notif error",e);}
 }
 
-const SHARED_DAILY = ["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
-const COUPLE_POOL = ["Passer l'aspirateur","Passer le mop","Faire une machine à laver","Etendre le linge","Plier le linge"];
-const PERSONAL_TASKS = {
+const SHARED_DAILY=["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
+const COUPLE_POOL=["Passer l'aspirateur","Passer le mop","Faire une machine à laver","Etendre le linge","Plier le linge"];
+const PERSONAL_TASKS={
   Michel:["Ranger sa chambre","Passer l'aspirateur dans sa chambre","Passer le mop dans sa chambre","Ranger ses vêtements","Ramasser ses affaires et les ranger dans sa chambre","Nettoyer sa salle de bain"],
   Gabrielle:["Ranger sa chambre","Passer l'aspirateur dans sa chambre","Passer le mop dans sa chambre","Ranger ses vêtements","Ramasser ses affaires et les ranger dans sa chambre","Nettoyer sa salle de bain"],
-  Maman:["Ranger ses vêtements"],
-  Papou:["Ranger ses vêtements"],
+  Maman:["Ranger ses vêtements"],Papou:["Ranger ses vêtements"],
 };
-const KIDS = ["Michel","Gabrielle"];
-const COUPLE = ["Maman","Papou"];
-const INITIATIVE_TASKS = ["Passer l'aspirateur","Plier le linge","Ranger une pièce"];
-const ROOMS = ["Salon","Cuisine","Toilette du bas","Toilette du haut","Balcon"];
-const DEFAULT_PROFILES = {
-  Maman:{color:"#e879a0",emoji:"👩",pin:"0000"},
-  Papou:{color:"#7C6AF7",emoji:"👨",pin:"0000"},
-  Michel:{color:"#F97316",emoji:"🧒",pin:"0000"},
-  Gabrielle:{color:"#06B6D4",emoji:"👧",pin:"0000"},
-};
-const DEFAULT_REWARDS = {Michel:"🍬 Bonbons au choix",Gabrielle:"🍰 Gâteau au choix"};
-const EMOJI_OPTIONS = ["👩","👨","🧒","👧","🧑","👦","👴","👵","🦸","🧙","🐱","🐶","🦊","🐼","🦁","⭐","🌈","🎮","🎨","🏆"];
-const COLOR_OPTIONS = ["#e879a0","#7C6AF7","#F97316","#06B6D4","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#14B8A6","#6366F1","#84CC16"];
-const RULES = [
-  {emoji:"🏠", title:"Tâches hebdomadaires Michel & Gabrielle", desc:"Remplir/vider le lave-vaisselle, sortir les poubelles, mettre/débarrasser la table, s'occuper de Tabby. Tout le monde peut les faire !"},
-  {emoji:"👫", title:"Tâches Maman & Papou", desc:"Aspirateur, mop, machine à laver, linge… Ces tâches sont réservées à Maman et Papou."},
-  {emoji:"🛏️", title:"Tâches personnelles", desc:"Chaque membre a ses propres tâches (chambre, vêtements…). Chacun coche les siennes."},
-  {emoji:"⭐", title:"Initiatives", desc:"Maman ou Papou peut poster une tâche bonus. Michel ou Gabrielle peut la prendre et la réaliser. Les initiatives rapportent 2 points au lieu de 1 !"},
-  {emoji:"🏆", title:"Challenges Michel & Gabrielle", desc:"Terminez toutes vos tâches perso dans la semaine pour débloquer votre récompense !"},
-  {emoji:"⚔️", title:"Compétition", desc:"Celui qui fait le plus de tâches hebdomadaires dans la semaine gagne une récompense !"},
-  {emoji:"💬", title:"Messagerie", desc:"Envoyez des messages à toute la famille depuis l'onglet Messages. Visible par tous !"},
-  {emoji:"✏️", title:"Mon profil", desc:"Appuie sur le bouton ✏️ en haut à droite pour personnaliser ton emoji, ta couleur et changer ton code PIN quand tu veux !"},
-  {emoji:"😬", title:"Gages", desc:"Si Maman ou Papou fait une tâche hebdomadaire à votre place, Michel et Gabrielle ont un gage. En fin de semaine, les retardataires aussi !"},
+const KIDS=["Michel","Gabrielle"];
+const COUPLE=["Maman","Papou"];
+const INITIATIVE_TASKS=["Passer l'aspirateur","Plier le linge","Ranger une pièce"];
+const ROOMS=["Salon","Cuisine","Toilette du bas","Toilette du haut","Balcon"];
+const DEFAULT_PROFILES={Maman:{color:"#e879a0",emoji:"👩",pin:"0000"},Papou:{color:"#7C6AF7",emoji:"👨",pin:"0000"},Michel:{color:"#F97316",emoji:"🧒",pin:"0000"},Gabrielle:{color:"#06B6D4",emoji:"👧",pin:"0000"}};
+const DEFAULT_REWARDS={Michel:"🍬 Bonbons au choix",Gabrielle:"🍰 Gâteau au choix"};
+const EMOJI_OPTIONS=["👩","👨","🧒","👧","🧑","👦","👴","👵","🦸","🧙","🐱","🐶","🦊","🐼","🦁","⭐","🌈","🎮","🎨","🏆"];
+const COLOR_OPTIONS=["#e879a0","#7C6AF7","#F97316","#06B6D4","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#14B8A6","#6366F1","#84CC16"];
+const RULES=[
+  {emoji:"🏠",title:"Tâches hebdomadaires Michel & Gabrielle",desc:"Remplir/vider le lave-vaisselle, sortir les poubelles, mettre/débarrasser la table, s'occuper de Tabby. Tout le monde peut les faire !"},
+  {emoji:"👫",title:"Tâches Maman & Papou",desc:"Aspirateur, mop, machine à laver, linge… Ces tâches sont réservées à Maman et Papou."},
+  {emoji:"🛏️",title:"Tâches personnelles",desc:"Chaque membre a ses propres tâches (chambre, vêtements…). Chacun coche les siennes."},
+  {emoji:"⭐",title:"Initiatives",desc:"Maman ou Papou peut poster une tâche bonus. Michel ou Gabrielle peut la prendre et la réaliser. Les initiatives rapportent 2 points au lieu de 1 !"},
+  {emoji:"🏆",title:"Challenges Michel & Gabrielle",desc:"Terminez toutes vos tâches perso dans la semaine pour débloquer votre récompense !"},
+  {emoji:"⚔️",title:"Compétition",desc:"Celui qui fait le plus de tâches hebdomadaires dans la semaine gagne une récompense !"},
+  {emoji:"📸",title:"Photos de preuves",desc:"Pour chaque tâche, tu peux ajouter une photo pour prouver que c'est fait ! Visible par toute la famille."},
+  {emoji:"💬",title:"Messagerie",desc:"Envoyez des messages à toute la famille depuis l'onglet Messages. Visible par tous !"},
+  {emoji:"✏️",title:"Mon profil",desc:"Appuie sur le bouton ✏️ en haut à droite pour personnaliser ton emoji, ta couleur et changer ton code PIN quand tu veux !"},
+  {emoji:"😬",title:"Gages",desc:"Si Maman ou Papou fait une tâche hebdomadaire à votre place, Michel et Gabrielle ont un gage. En fin de semaine, les retardataires aussi !"},
 ];
 
 function dayKey(d=new Date()){return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;}
@@ -63,6 +64,7 @@ export default function App(){
   const [history,setHistory]=useState([]);
   const [points,setPoints]=useState({});
   const [rewards,setRewards]=useState(DEFAULT_REWARDS);
+  const [photos,setPhotos]=useState({});
   const [today,setToday]=useState(dayKey());
   const [unlockedShown,setUnlockedShown]=useState({});
   const [gageAlert,setGageAlert]=useState(null);
@@ -89,34 +91,51 @@ export default function App(){
   const [messages,setMessages]=useState([]);
   const [newMsg,setNewMsg]=useState("");
   const [loading,setLoading]=useState(true);
+  const [photoViewer,setPhotoViewer]=useState(null);
+  const [uploadingKey,setUploadingKey]=useState(null);
   const msgEnd=useRef(null);
   const timer=useRef(null);
   const pollTimer=useRef(null);
 
   function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},msUntilMidnight()+500);}
 
+  // Init OneSignal
+  useEffect(()=>{
+    const script=document.createElement("script");
+    script.src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
+    script.defer=true;
+    document.head.appendChild(script);
+    window.OneSignalDeferred=window.OneSignalDeferred||[];
+    window.OneSignalDeferred.push(async(OneSignal)=>{
+      await OneSignal.init({appId:ONESIGNAL_APP_ID,safari_web_id:"web.onesignal.auto.65de1f8b-1d6e-46f6-be4e-36b5f6c7f631",notifyButton:{enable:false},allowLocalhostAsSecureOrigin:true});
+      await OneSignal.Notifications.requestPermission();
+    });
+  },[]);
+
   async function loadFromDB(){
     try{
       const d=await dbGet();
       if(d){
         if(d.profiles&&Object.keys(d.profiles).length>0)setProfiles(d.profiles);
-        setDone(d.done||{});
-        setHistory(d.history||[]);
-        setPoints(d.points||{});
+        setDone(d.done||{});setHistory(d.history||[]);setPoints(d.points||{});
         if(d.rewards&&Object.keys(d.rewards).length>0)setRewards(d.rewards);
-        setTableRota(d.table_rota||{});
-        setInitiative(d.initiative||null);
-        setMessages(d.messages||[]);
-        setUnlockedShown(d.unlocked||{});
+        setTableRota(d.table_rota||{});setInitiative(d.initiative||null);
+        setMessages(d.messages||[]);setUnlockedShown(d.unlocked||{});
+        setPhotos(d.photos||{});
       }
     }catch(e){console.error(e);}
     setLoading(false);
   }
 
   useEffect(()=>{
-    scheduleMidnight();
-    loadFromDB();
+    scheduleMidnight();loadFromDB();
     pollTimer.current=setInterval(loadFromDB,5000);
+    // Notification de bienvenue au premier lancement du jour
+    const lastWelcome=localStorage.getItem("fc_welcome_day");
+    if(lastWelcome!==dayKey()){
+      localStorage.setItem("fc_welcome_day",dayKey());
+      setTimeout(()=>sendPushNotification("🏠 FamilyChores","Les challenges commencent aujourd'hui ! Bonne chance à toute la famille 💪"),3000);
+    }
     return()=>{clearTimeout(timer.current);clearInterval(pollTimer.current);}
   },[]);
 
@@ -135,7 +154,6 @@ export default function App(){
 
   function selectMember(m){setSelectedMember(m);setPin("");setPinError(false);setScreen("pin");}
   function logout(){setScreen("home");setSelectedMember(null);setPin("");}
-
   function dismissRules(){
     const seen=JSON.parse(localStorage.getItem("fc_seen")||"[]");
     if(!seen.includes(selectedMember)){seen.push(selectedMember);localStorage.setItem("fc_seen",JSON.stringify(seen));}
@@ -150,68 +168,92 @@ export default function App(){
     return["Michel","Gabrielle"][(["Michel","Gabrielle"].indexOf(setter)+daysFromMon)%2];
   }
   function whoClearsTableToday(){const s=whoSetsTableToday();return s?(s==="Michel"?"Gabrielle":"Michel"):null;}
+  function kidsCommonCount(){
+    const c={Michel:0,Gabrielle:0};
+    history.filter(h=>h.weekKey===wk&&h.type==="commune"&&KIDS.includes(h.member)).forEach(h=>{c[h.member]=(c[h.member]||0)+1;});
+    return c;
+  }
+
+  async function handlePhotoUpload(e,taskKey){
+    const file=e.target.files[0];if(!file)return;
+    setUploadingKey(taskKey);
+    try{
+      const url=await uploadPhoto(file,taskKey);
+      const np={...photos,[taskKey]:url};
+      setPhotos(np);await dbSet({photos:np});
+    }catch(err){console.error(err);}
+    setUploadingKey(null);
+  }
+
+  function TaskPhotoButton({taskKey}){
+    const photoUrl=photos[taskKey];
+    return(
+      <div style={{display:"flex",alignItems:"center",gap:6}}>
+        {photoUrl&&<button onClick={()=>setPhotoViewer(photoUrl)} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>📸</button>}
+        <label style={{width:28,height:28,borderRadius:8,background:uploadingKey===taskKey?"#f0f0f5":"#f0f0f5",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}>
+          {uploadingKey===taskKey?"⏳":"📷"}
+          <input type="file" accept="image/*" capture="environment" onChange={e=>handlePhotoUpload(e,taskKey)} style={{display:"none"}}/>
+        </label>
+      </div>
+    );
+  }
 
   function claimShared(task){
     const key=`${today}|shared|${task}`;
     const setter=whoSetsTableToday();const clearer=whoClearsTableToday();
     if(task==="Mettre la table"&&setter&&selectedMember!==setter){alert(`C'est ${setter} qui met la table aujourd'hui !`);return;}
     if(task==="Débarrasser la table"&&clearer&&selectedMember!==clearer){alert(`C'est ${clearer} qui débarrasse aujourd'hui !`);return;}
-    let nd,np,nh,nr;
+    let nd,np,nh;
     if(done[key]){
       const member=done[key];nd={...done};delete nd[key];
       np={...points,[member]:Math.max(0,(points[member]||0)-1)};
       nh=history.filter(h=>!(h.task===task&&h.dayKey===today&&h.type==="commune"));
     }else{
       const member=selectedMember;
-      let newRota=tableRota;
       if(task==="Mettre la table"&&KIDS.includes(member)&&new Date().getDay()===1&&!tableRota[wk]){
-        newRota={...tableRota,[wk]:member};setTableRota(newRota);
-        dbSet({table_rota:newRota});
+        const nr={...tableRota,[wk]:member};setTableRota(nr);dbSet({table_rota:nr});
       }
-      nd={...done,[key]:member};
-      np={...points,[member]:(points[member]||0)+1};
+      nd={...done,[key]:member};np={...points,[member]:(points[member]||0)+1};
       nh=addHistory({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"commune"});
       if(COUPLE.includes(member))setGageAlert({member,task});
+      sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,task);
     }
-    setDone(nd);setPoints(np);setHistory(nh);
-    dbSet({done:nd,points:np,history:nh});
+    setDone(nd);setPoints(np);setHistory(nh);dbSet({done:nd,points:np,history:nh});
   }
 
   function claimCouple(task){
     if(!COUPLE.includes(selectedMember))return;
-    const key=`${wk}|couple|${task}`;
-    let nd,np,nh;
-    if(done[key]){
-      const member=done[key];nd={...done};delete nd[key];
-      np={...points,[member]:Math.max(0,(points[member]||0)-1)};
-      nh=history.filter(h=>!(h.task===task&&h.weekKey===wk&&h.type==="couple"));
-    }else{
-      const member=selectedMember;
-      nd={...done,[key]:member};
-      np={...points,[member]:(points[member]||0)+1};
-      nh=addHistory({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"couple"});
-    }
-    setDone(nd);setPoints(np);setHistory(nh);
-    dbSet({done:nd,points:np,history:nh});
+    const member=selectedMember;
+    const np={...points,[member]:(points[member]||0)+1};
+    const nh=addHistory({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"couple"});
+    setPoints(np);setHistory(nh);dbSet({points:np,history:nh});
+    sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,task);
   }
 
   function togglePersonal(pm,task){
     const key=`${wk}|personal|${pm}|${task}`;
     let nd={...done},np={...points},nh;
-    if(nd[key]){delete nd[key];np[pm]=Math.max(0,(np[pm]||0)-1);nh=history.filter(h=>!(h.task===task&&h.member===pm&&h.weekKey===wk&&h.type==="perso"));}
-    else{nd[key]=true;np[pm]=(np[pm]||0)+1;nh=addHistory({member:pm,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"perso"});}
-    setDone(nd);setPoints(np);setHistory(nh);
-    dbSet({done:nd,points:np,history:nh});
+    if(nd[key]){
+      delete nd[key];np[pm]=Math.max(0,(np[pm]||0)-1);
+      nh=history.filter(h=>!(h.task===task&&h.member===pm&&h.weekKey===wk&&h.type==="perso"));
+    }else{
+      nd[key]=true;np[pm]=(np[pm]||0)+1;
+      nh=addHistory({member:pm,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"perso"});
+      sendPushNotification(`${pe(pm)} ${pm} a fait une tâche !`,task);
+    }
+    setDone(nd);setPoints(np);setHistory(nh);dbSet({done:nd,points:np,history:nh});
   }
 
   function postInitiative(){
     const label=initTask==="Ranger une pièce"?`Ranger une pièce : ${initRoom}`:initTask;
     const ni={task:label,postedBy:selectedMember,postedAt:new Date().toLocaleDateString("fr-FR"),acceptedBy:null,done:false};
     setInitiative(ni);dbSet({initiative:ni});setShowInitiativeForm(false);
+    sendPushNotification("⭐ Nouvelle initiative !",`${selectedMember} a posté : ${label} (+2 pts)`);
   }
   function acceptInitiative(){
     const ni={...initiative,acceptedBy:selectedMember};
     setInitiative(ni);dbSet({initiative:ni});
+    sendPushNotification(`✋ ${selectedMember} prend en charge l'initiative !`,initiative.task);
   }
   function completeInitiative(){
     const member=initiative.acceptedBy;
@@ -219,6 +261,7 @@ export default function App(){
     const nh=addHistory({member,task:`⭐ Initiative : ${initiative.task}`,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"initiative"});
     setPoints(np);setHistory(nh);setInitiative(null);
     dbSet({points:np,history:nh,initiative:null});
+    sendPushNotification(`🏆 ${member} a terminé l'initiative !`,`${initiative.task} (+2 pts)`);
   }
   function cancelInitiative(){setInitiative(null);dbSet({initiative:null});}
 
@@ -226,25 +269,22 @@ export default function App(){
     if(!newMsg.trim())return;
     const nm=[...messages,{from:selectedMember,text:newMsg.trim(),date:new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),day:new Date().toLocaleDateString("fr-FR")}].slice(-100);
     setMessages(nm);dbSet({messages:nm});setNewMsg("");
+    sendPushNotification(`💬 ${selectedMember}`,newMsg.trim());
   }
 
   function nextWeek(){
     const late=Object.keys(profiles).filter(m=>{
       const personal=PERSONAL_TASKS[m]||[];
-      return personal.some(t=>!done[`${wk}|personal|${m}|${t}`])||
-        (COUPLE.includes(m)&&COUPLE_POOL.some(t=>!done[`${wk}|couple|${t}`]));
+      return personal.some(t=>!done[`${wk}|personal|${m}|${t}`])||(COUPLE.includes(m)&&COUPLE_POOL.some(t=>!done[`${wk}|couple|${t}`]));
     });
     setLateMembers(late);setEndWeekModal(true);
   }
   function doNextWeek(){
     const nd=Object.fromEntries(Object.entries(done).filter(([k])=>k.includes("|shared|")));
-    const nu={};setUnlockedShown(nu);setDone(nd);
-    dbSet({done:nd,unlocked:nu});
+    const nu={};setUnlockedShown(nu);setDone(nd);dbSet({done:nd,unlocked:nu});
     setEndWeekModal(false);setLateMembers([]);
   }
-  function dismissUnlock(kid){
-    const nu={...unlockedShown,[kid]:true};setUnlockedShown(nu);dbSet({unlocked:nu});
-  }
+  function dismissUnlock(kid){const nu={...unlockedShown,[kid]:true};setUnlockedShown(nu);dbSet({unlocked:nu});}
   function kidChallenge(kid){
     const personal=PERSONAL_TASKS[kid]||[];const total=personal.length;if(!total)return{done:0,total:0,pct:0,unlocked:false};
     const d=personal.filter(t=>done[`${wk}|personal|${kid}|${t}`]).length;
@@ -255,22 +295,13 @@ export default function App(){
     const np={...profiles,[selectedMember]:{...profiles[selectedMember],emoji:editEmoji,color:editColor,pin:editPin}};
     setProfiles(np);
     const nr=KIDS.includes(selectedMember)?{...rewards,[selectedMember]:editReward}:rewards;
-    setRewards(nr);
-    dbSet({profiles:np,rewards:nr});
-    setEditingProfile(false);
-  }
-  function kidsCommonCount(){
-    const c={Michel:0,Gabrielle:0};
-    history.filter(h=>h.weekKey===wk&&h.type==="commune"&&KIDS.includes(h.member)).forEach(h=>{c[h.member]=(c[h.member]||0)+1;});
-    return c;
+    setRewards(nr);dbSet({profiles:np,rewards:nr});setEditingProfile(false);
   }
 
-  const color=pc(selectedMember);
-  const emoji=pe(selectedMember);
+  const color=pc(selectedMember);const emoji=pe(selectedMember);
   const sharedDone=SHARED_DAILY.filter(t=>done[`${today}|shared|${t}`]).length;
   const coupleDone=COUPLE_POOL.filter(t=>done[`${wk}|couple|${t}`]).length;
-  const isCouple=COUPLE.includes(selectedMember);
-  const isKid=KIDS.includes(selectedMember);
+  const isCouple=COUPLE.includes(selectedMember);const isKid=KIDS.includes(selectedMember);
   const yday=yesterdayKey();
   const filteredHist=history.filter(h=>{
     if(histFilter==="today")return h.dayKey===today;
@@ -284,9 +315,9 @@ export default function App(){
   };
 
   if(loading)return(
-    <div style={{minHeight:"100vh",background:"#f5f5f7",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+    <div style={{minHeight:"100vh",background:"#f5f5f7",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"-apple-system,sans-serif"}}>
       <div style={{fontSize:48,marginBottom:16}}>🏠</div>
-      <p style={{fontSize:16,color:"#888",fontFamily:"var(--font-sans)"}}>Chargement...</p>
+      <p style={{fontSize:16,color:"#888"}}>Chargement...</p>
     </div>
   );
 
@@ -378,6 +409,7 @@ export default function App(){
 
         {page==="tasks"&&(
           <>
+            {/* Tâches hebdomadaires */}
             <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                 <p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:0}}>Tâches hebdomadaires Michel &amp; Gabrielle</p>
@@ -389,15 +421,17 @@ export default function App(){
               {SHARED_DAILY.map(task=>{
                 const key=`${today}|shared|${task}`;const cb=done[key];
                 return(
-                  <div key={task} onClick={()=>claimShared(task)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #f5f5f7",cursor:"pointer"}}>
-                    <div style={{width:26,height:26,borderRadius:13,border:cb?"none":`2px solid ${color}44`,background:cb?pc(cb):"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{cb&&<Tick/>}</div>
-                    <span style={{fontSize:14,color:cb?"#bbb":"#1a1a2e",textDecoration:cb?"line-through":"none",flex:1}}>{task}</span>
-                    {cb?<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${pc(cb)}22`,color:pc(cb),fontWeight:600}}>{cb}</span>:<span style={{fontSize:20}}>{pe(selectedMember)}</span>}
+                  <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
+                    <div onClick={()=>claimShared(task)} style={{width:26,height:26,borderRadius:13,border:cb?"none":`2px solid ${color}44`,background:cb?pc(cb):"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>{cb&&<Tick/>}</div>
+                    <span onClick={()=>claimShared(task)} style={{fontSize:14,color:cb?"#bbb":"#1a1a2e",textDecoration:cb?"line-through":"none",flex:1,cursor:"pointer"}}>{task}</span>
+                    {cb?<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${pc(cb)}22`,color:pc(cb),fontWeight:600}}>{cb}</span>:null}
+                    <TaskPhotoButton taskKey={key}/>
                   </div>
                 );
               })}
             </div>
 
+            {/* Michel vs Gabrielle */}
             {(()=>{
               const counts=kidsCommonCount();
               const mS=counts["Michel"]||0;const gS=counts["Gabrielle"]||0;const total=mS+gS||1;
@@ -408,7 +442,7 @@ export default function App(){
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                     <span style={{fontSize:13,fontWeight:700,color:pc("Michel"),minWidth:54}}>{pe("Michel")} {mS}</span>
                     <div style={{flex:1,height:10,borderRadius:5,background:"#f0f0f5",overflow:"hidden",display:"flex"}}>
-                      <div style={{height:"100%",background:pc("Michel"),width:`${(mS/total)*100}%`,transition:"width 0.4s"}}/>
+                      <div style={{height:"100%",background:pc("Michel"),width:`${(mS/total)*100}%`,transition:"width 0.4f"}}/>
                       <div style={{height:"100%",background:pc("Gabrielle"),width:`${(gS/total)*100}%`,transition:"width 0.4s"}}/>
                     </div>
                     <span style={{fontSize:13,fontWeight:700,color:pc("Gabrielle"),minWidth:54,textAlign:"right"}}>{gS} {pe("Gabrielle")}</span>
@@ -432,6 +466,7 @@ export default function App(){
               );
             })()}
 
+            {/* Initiative */}
             <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:"1.5px solid #FEF9C3"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                 <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>⭐ Initiative <span style={{fontSize:12,color:"#A16207",fontWeight:600,marginLeft:6}}>+2 pts</span></p>
@@ -468,6 +503,7 @@ export default function App(){
               )}
             </div>
 
+            {/* Maman & Papou */}
             <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                 <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>Maman &amp; Papou</p>
@@ -479,15 +515,17 @@ export default function App(){
               {COUPLE_POOL.map(task=>{
                 const key=`${wk}|couple|${task}`;const cb=done[key];
                 return(
-                  <div key={task} onClick={()=>claimCouple(task)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #f5f5f7",cursor:isCouple?"pointer":"default",opacity:!isCouple&&!cb?0.5:1}}>
-                    <div style={{width:26,height:26,borderRadius:13,border:cb?"none":`2px solid ${isCouple?color+"44":"#ddd"}`,background:cb?pc(cb):"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{cb&&<Tick/>}</div>
-                    <span style={{fontSize:14,color:cb?"#bbb":"#1a1a2e",textDecoration:cb?"line-through":"none",flex:1}}>{task}</span>
+                  <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
+                    <div onClick={()=>claimCouple(task)} style={{width:26,height:26,borderRadius:13,border:cb?"none":`2px solid ${isCouple?color+"44":"#ddd"}`,background:cb?pc(cb):"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:isCouple?"pointer":"default"}}>{cb&&<Tick/>}</div>
+                    <span onClick={()=>claimCouple(task)} style={{fontSize:14,color:cb?"#bbb":"#1a1a2e",textDecoration:cb?"line-through":"none",flex:1,cursor:isCouple?"pointer":"default",opacity:!isCouple&&!cb?0.5:1}}>{task}</span>
                     {cb?<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${pc(cb)}22`,color:pc(cb),fontWeight:600}}>{cb}</span>:!isCouple&&<span style={{fontSize:11,color:"#ccc"}}>Maman/Papou</span>}
+                    <TaskPhotoButton taskKey={key}/>
                   </div>
                 );
               })}
             </div>
 
+            {/* Tâches perso */}
             {Object.keys(profiles).filter(m=>(PERSONAL_TASKS[m]||[]).length>0).map(pm=>{
               const pmTasks=PERSONAL_TASKS[pm]||[];
               const pmDone=pmTasks.filter(t=>done[`${wk}|personal|${pm}|${t}`]).length;
@@ -507,9 +545,10 @@ export default function App(){
                   {pmTasks.map(task=>{
                     const key=`${wk}|personal|${pm}|${task}`;const checked=!!done[key];
                     return(
-                      <div key={task} onClick={()=>isOwn&&togglePersonal(pm,task)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #f5f5f7",cursor:isOwn?"pointer":"default",opacity:!isOwn&&!checked?0.5:1}}>
-                        <div style={{width:26,height:26,borderRadius:13,border:checked?"none":`2px solid ${isOwn?pmC+"44":"#ddd"}`,background:checked?pmC:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{checked&&<Tick/>}</div>
-                        <span style={{fontSize:14,color:checked?"#bbb":"#1a1a2e",textDecoration:checked?"line-through":"none",flex:1}}>{task}</span>
+                      <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
+                        <div onClick={()=>isOwn&&togglePersonal(pm,task)} style={{width:26,height:26,borderRadius:13,border:checked?"none":`2px solid ${isOwn?pmC+"44":"#ddd"}`,background:checked?pmC:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:isOwn?"pointer":"default"}}>{checked&&<Tick/>}</div>
+                        <span onClick={()=>isOwn&&togglePersonal(pm,task)} style={{fontSize:14,color:checked?"#bbb":"#1a1a2e",textDecoration:checked?"line-through":"none",flex:1,cursor:isOwn?"pointer":"default",opacity:!isOwn&&!checked?0.5:1}}>{task}</span>
+                        <TaskPhotoButton taskKey={key}/>
                       </div>
                     );
                   })}
@@ -517,6 +556,7 @@ export default function App(){
               );
             })}
 
+            {/* Challenges */}
             {KIDS.map(kid=>{
               const kp=kidChallenge(kid);const kC=pc(kid);const kE=pe(kid);const isOwn=kid===selectedMember;
               return(
@@ -579,6 +619,8 @@ export default function App(){
               {filteredHist.length===0&&<p style={{fontSize:14,color:"#aaa",textAlign:"center",padding:"1rem 0"}}>Aucune tâche pour cette période.</p>}
               {filteredHist.map((h,i)=>{
                 const c=pc(h.member);const e=pe(h.member);
+                const photoKey=h.type==="commune"?`${h.dayKey}|shared|${h.task}`:h.type==="couple"?`${h.weekKey}|couple|${h.task}`:`${h.weekKey}|personal|${h.member}|${h.task}`;
+                const photoUrl=photos[photoKey];
                 return(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
                     <div style={{width:34,height:34,borderRadius:17,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{e}</div>
@@ -586,9 +628,12 @@ export default function App(){
                       <p style={{fontWeight:700,fontSize:13,color:c,margin:"0 0 1px"}}>{h.member}</p>
                       <p style={{fontSize:12,color:"#888",margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{h.task}</p>
                     </div>
-                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
-                      <span style={typeBadgeStyle(h.type)}>{h.type}</span>
-                      <span style={{fontSize:11,color:"#bbb"}}>{h.date}</span>
+                    <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                      {photoUrl&&<button onClick={()=>setPhotoViewer(photoUrl)} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14}}>📸</button>}
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+                        <span style={typeBadgeStyle(h.type)}>{h.type}</span>
+                        <span style={{fontSize:11,color:"#bbb"}}>{h.date}</span>
+                      </div>
                     </div>
                   </div>
                 );
@@ -625,6 +670,7 @@ export default function App(){
         </div>
       </div>
 
+      {/* Bottom nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,display:"flex",justifyContent:"center"}}>
         <div style={{width:"100%",maxWidth:480,background:"#fff",borderTop:"1px solid #f0f0f5",display:"flex",padding:"8px 0 20px",boxShadow:"0 -4px 20px #0000000a"}}>
           {[["tasks","🏠","Tâches"],["scores","🏅","Points"],["history","📋","Historique"],["messages","💬","Messages"]].map(([p,ic,lb])=>(
@@ -636,6 +682,15 @@ export default function App(){
         </div>
       </div>
 
+      {/* Photo viewer */}
+      {photoViewer&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}} onClick={()=>setPhotoViewer(null)}>
+          <img src={photoViewer} style={{maxWidth:"100%",maxHeight:"90vh",borderRadius:16,objectFit:"contain"}} alt="Preuve tâche"/>
+          <button onClick={()=>setPhotoViewer(null)} style={{position:"absolute",top:20,right:20,width:40,height:40,borderRadius:20,background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",fontSize:20,cursor:"pointer"}}>✕</button>
+        </div>
+      )}
+
+      {/* Règles */}
       {firstLogin&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:400,padding:"1rem"}}>
           <div style={{background:"#fff",borderRadius:24,padding:"1.75rem",width:"100%",maxWidth:340,textAlign:"center"}}>
@@ -656,6 +711,7 @@ export default function App(){
         </div>
       )}
 
+      {/* Gage */}
       {gageAlert&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:"1rem"}} onClick={()=>setGageAlert(null)}>
           <div style={{background:"#fff",borderRadius:24,padding:"1.75rem",width:"100%",maxWidth:340,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
@@ -669,6 +725,7 @@ export default function App(){
         </div>
       )}
 
+      {/* Fin de semaine */}
       {endWeekModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:"1rem"}}>
           <div style={{background:"#fff",borderRadius:24,padding:"1.5rem",width:"100%",maxWidth:340}}>
@@ -712,6 +769,7 @@ export default function App(){
         </div>
       )}
 
+      {/* Profil */}
       {editingProfile&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}} onClick={()=>setEditingProfile(false)}>
           <div style={{width:"100%",maxWidth:480,background:"#fff",borderRadius:"24px 24px 0 0",padding:"1.5rem 1.25rem 2.5rem"}} onClick={e=>e.stopPropagation()}>
