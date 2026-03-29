@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 const SUPABASE_URL = "https://nbxiydhjlhjvuaggaxve.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Re31HJlpQz46zZxTc6l_VA_IxTCCfoa";
 const ONESIGNAL_APP_ID = "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631";
-const ONESIGNAL_API_KEY = "os_v2_app_mxpb7cy5nzdpnpsog227nr7wghslkoilrqwuubeungkjd774fmkxc57i64x7mw4lg5m4c2zsv7rpxs2zn3vlskgbsf5e2awp2kpepmy";
+const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_API_KEY;
 
 async function dbGet(){
   const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
