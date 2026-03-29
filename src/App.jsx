@@ -1,2349 +1,607 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from "react";
 
-const SHARED_DAILY = [
-  'Remplir le lave-vaisselle',
-  'Vider le lave-vaisselle',
-  'Sortir les poubelles',
-  'Mettre la table',
-  'Débarrasser la table',
-  'Donner à manger et à boire à Tabby',
-  'Enlever les crottes de Tabby',
-];
-const COUPLE_POOL = [
-  "Passer l'aspirateur",
-  'Passer le mop',
-  'Faire une machine à laver',
-  'Etendre le linge',
-  'Plier le linge',
-];
+const SHARED_DAILY = ["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
+const COUPLE_POOL = ["Passer l'aspirateur","Passer le mop","Faire une machine à laver","Etendre le linge","Plier le linge"];
 const PERSONAL_TASKS = {
-  Michel: [
-    'Ranger sa chambre',
-    "Passer l'aspirateur dans sa chambre",
-    'Passer le mop dans sa chambre',
-    'Ranger ses vêtements',
-    'Ramasser ses affaires et les ranger dans sa chambre',
-    'Nettoyer sa salle de bain',
-  ],
-  Gabrielle: [
-    'Ranger sa chambre',
-    "Passer l'aspirateur dans sa chambre",
-    'Passer le mop dans sa chambre',
-    'Ranger ses vêtements',
-    'Ramasser ses affaires et les ranger dans sa chambre',
-    'Nettoyer sa salle de bain',
-  ],
-  Maman: ['Ranger ses vêtements'],
-  Papou: ['Ranger ses vêtements'],
+  Michel:["Ranger sa chambre","Passer l'aspirateur dans sa chambre","Passer le mop dans sa chambre","Ranger ses vêtements","Ramasser ses affaires et les ranger dans sa chambre","Nettoyer sa salle de bain"],
+  Gabrielle:["Ranger sa chambre","Passer l'aspirateur dans sa chambre","Passer le mop dans sa chambre","Ranger ses vêtements","Ramasser ses affaires et les ranger dans sa chambre","Nettoyer sa salle de bain"],
+  Maman:["Ranger ses vêtements"],
+  Papou:["Ranger ses vêtements"],
 };
-const KIDS = ['Michel', 'Gabrielle'];
-const COUPLE = ['Maman', 'Papou'];
+const KIDS = ["Michel","Gabrielle"];
+const COUPLE = ["Maman","Papou"];
 const DEFAULT_PROFILES = {
-  Maman: { color: '#e879a0', emoji: '👩', pin: '1234' },
-  Papou: { color: '#7C6AF7', emoji: '👨', pin: '1234' },
-  Michel: { color: '#F97316', emoji: '🧒', pin: '1234' },
-  Gabrielle: { color: '#06B6D4', emoji: '👧', pin: '1234' },
+  Maman:{color:"#e879a0",emoji:"👩",pin:"0000"},
+  Papou:{color:"#7C6AF7",emoji:"👨",pin:"0000"},
+  Michel:{color:"#F97316",emoji:"🧒",pin:"0000"},
+  Gabrielle:{color:"#06B6D4",emoji:"👧",pin:"0000"},
 };
-const DEFAULT_REWARDS = {
-  Michel: '🍬 Bonbons au choix',
-  Gabrielle: '🍰 Gâteau au choix',
-};
-const EMOJI_OPTIONS = [
-  '👩',
-  '👨',
-  '🧒',
-  '👧',
-  '🧑',
-  '👦',
-  '👴',
-  '👵',
-  '🦸',
-  '🧙',
-  '🐱',
-  '🐶',
-  '🦊',
-  '🐼',
-  '🦁',
-  '⭐',
-  '🌈',
-  '🎮',
-  '🎨',
-  '🏆',
-];
-const COLOR_OPTIONS = [
-  '#e879a0',
-  '#7C6AF7',
-  '#F97316',
-  '#06B6D4',
-  '#10B981',
-  '#F59E0B',
-  '#EF4444',
-  '#8B5CF6',
-  '#EC4899',
-  '#14B8A6',
-  '#6366F1',
-  '#84CC16',
+const DEFAULT_REWARDS = {Michel:"🍬 Bonbons au choix",Gabrielle:"🍰 Gâteau au choix"};
+const EMOJI_OPTIONS = ["👩","👨","🧒","👧","🧑","👦","👴","👵","🦸","🧙","🐱","🐶","🦊","🐼","🦁","⭐","🌈","🎮","🎨","🏆"];
+const COLOR_OPTIONS = ["#e879a0","#7C6AF7","#F97316","#06B6D4","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#14B8A6","#6366F1","#84CC16"];
+const RULES = [
+  {emoji:"🏠", title:"Tâches hebdomadaires Michel & Gabrielle", desc:"Remplir/vider le lave-vaisselle, sortir les poubelles, mettre/débarrasser la table, s'occuper de Tabby. Tout le monde peut les faire !"},
+  {emoji:"👫", title:"Tâches Maman & Papou", desc:"Aspirateur, mop, machine à laver, linge… Ces tâches sont réservées à Maman et Papou."},
+  {emoji:"🛏️", title:"Tâches personnelles", desc:"Chaque membre a ses propres tâches (chambre, vêtements…). Chacun coche les siennes."},
+  {emoji:"🏆", title:"Challenges Michel & Gabrielle", desc:"Terminez toutes vos tâches perso dans la semaine pour débloquer votre récompense !"},
+  {emoji:"⚔️", title:"Compétition", desc:"Celui qui fait le plus de tâches hebdomadaires dans la semaine gagne une récompense !"},
+  {emoji:"😬", title:"Gages", desc:"Si Maman ou Papou fait une tâche hebdomadaire à votre place, Michel et Gabrielle ont un gage. En fin de semaine, les retardataires aussi !"},
 ];
 
-function dayKey(d = new Date()) {
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-function weekKey(d = new Date()) {
-  const s = new Date(d.getFullYear(), 0, 0);
-  return `${d.getFullYear()}-W${Math.floor(
-    (d - s) / (7 * 24 * 60 * 60 * 1000)
-  )}`;
-}
-function yesterdayKey() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return dayKey(d);
-}
-function msUntilMidnight() {
-  const n = new Date(),
-    m = new Date(n);
-  m.setHours(24, 0, 0, 0);
-  return m - n;
-}
+function dayKey(d=new Date()){return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;}
+function weekKey(d=new Date()){const s=new Date(d.getFullYear(),0,0);return `${d.getFullYear()}-W${Math.floor((d-s)/(7*24*60*60*1000))}`;}
+function yesterdayKey(){const d=new Date();d.setDate(d.getDate()-1);return dayKey(d);}
+function msUntilMidnight(){const n=new Date(),m=new Date(n);m.setHours(24,0,0,0);return m-n;}
 
-const Tick = () => (
-  <svg width="14" height="14" viewBox="0 0 12 12">
-    <polyline
-      points="2,6 5,9 10,3"
-      stroke="#fff"
-      strokeWidth="2.5"
-      fill="none"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
+const Tick=()=><svg width="14" height="14" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>;
 
-export default function App() {
-  const [profiles, setProfiles] = useState(DEFAULT_PROFILES);
-  const [done, setDone] = useState({});
-  const [history, setHistory] = useState([]);
-  const [points, setPoints] = useState({});
-  const [rewards, setRewards] = useState(DEFAULT_REWARDS);
-  const [today, setToday] = useState(dayKey());
-  const [unlockedShown, setUnlockedShown] = useState({});
-  const [gageAlert, setGageAlert] = useState(null);
-  const [endWeekModal, setEndWeekModal] = useState(false);
-  const [lateMembers, setLateMembers] = useState([]);
-  const [tableRota, setTableRota] = useState({});
-  const [screen, setScreen] = useState('home');
-  const [selectedMember, setSelectedMember] = useState(null);
-  const [pin, setPin] = useState('');
-  const [pinError, setPinError] = useState(false);
-  const [page, setPage] = useState('tasks');
-  const [histFilter, setHistFilter] = useState('today');
-  const [editingProfile, setEditingProfile] = useState(false);
-  const [editEmoji, setEditEmoji] = useState('');
-  const [editColor, setEditColor] = useState('');
-  const [editPin, setEditPin] = useState('');
-  const [editReward, setEditReward] = useState('');
-  const timer = useRef(null);
+export default function App(){
+  const [profiles,setProfiles]=useState(DEFAULT_PROFILES);
+  const [done,setDone]=useState({});
+  const [history,setHistory]=useState([]);
+  const [points,setPoints]=useState({});
+  const [rewards,setRewards]=useState(DEFAULT_REWARDS);
+  const [today,setToday]=useState(dayKey());
+  const [unlockedShown,setUnlockedShown]=useState({});
+  const [gageAlert,setGageAlert]=useState(null);
+  const [endWeekModal,setEndWeekModal]=useState(false);
+  const [lateMembers,setLateMembers]=useState([]);
+  const [tableRota,setTableRota]=useState({});
+  const [screen,setScreen]=useState("home");
+  const [selectedMember,setSelectedMember]=useState(null);
+  const [pin,setPin]=useState("");
+  const [pinError,setPinError]=useState(false);
+  const [page,setPage]=useState("tasks");
+  const [histFilter,setHistFilter]=useState("today");
+  const [editingProfile,setEditingProfile]=useState(false);
+  const [editEmoji,setEditEmoji]=useState("");
+  const [editColor,setEditColor]=useState("");
+  const [editPin,setEditPin]=useState("");
+  const [editReward,setEditReward]=useState("");
+  const [firstLogin,setFirstLogin]=useState(false);
+  const [rulesPage,setRulesPage]=useState(0);
+  const timer=useRef(null);
 
-  function scheduleMidnight() {
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      setToday(dayKey());
-      scheduleMidnight();
-    }, msUntilMidnight() + 500);
-  }
+  function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},msUntilMidnight()+500);}
 
-  useEffect(() => {
+  useEffect(()=>{
     scheduleMidnight();
-    try {
-      setProfiles(
-        JSON.parse(
-          localStorage.getItem('fc_profiles') ||
-            JSON.stringify(DEFAULT_PROFILES)
-        )
-      );
-      setDone(JSON.parse(localStorage.getItem('fc_done') || '{}'));
-      setHistory(JSON.parse(localStorage.getItem('fc_hist') || '[]'));
-      setPoints(JSON.parse(localStorage.getItem('fc_pts') || '{}'));
-      setRewards(
-        JSON.parse(
-          localStorage.getItem('fc_rewards') || JSON.stringify(DEFAULT_REWARDS)
-        )
-      );
-      setUnlockedShown(JSON.parse(localStorage.getItem('fc_unlocked') || '{}'));
-      setTableRota(JSON.parse(localStorage.getItem('fc_tablerota') || '{}'));
-    } catch {}
-    return () => clearTimeout(timer.current);
-  }, []);
+    try{
+      setProfiles(JSON.parse(localStorage.getItem("fc_profiles")||JSON.stringify(DEFAULT_PROFILES)));
+      setDone(JSON.parse(localStorage.getItem("fc_done")||"{}"));
+      setHistory(JSON.parse(localStorage.getItem("fc_hist")||"[]"));
+      setPoints(JSON.parse(localStorage.getItem("fc_pts")||"{}"));
+      setRewards(JSON.parse(localStorage.getItem("fc_rewards")||JSON.stringify(DEFAULT_REWARDS)));
+      setUnlockedShown(JSON.parse(localStorage.getItem("fc_unlocked")||"{}"));
+      setTableRota(JSON.parse(localStorage.getItem("fc_tablerota")||"{}"));
+    }catch{}
+    return()=>clearTimeout(timer.current);
+  },[]);
 
-  function sv(k, v) {
-    try {
-      localStorage.setItem(k, JSON.stringify(v));
-    } catch {}
-  }
-  function pc(m) {
-    return (profiles[m] || DEFAULT_PROFILES[m] || { color: '#888' }).color;
-  }
-  function pe(m) {
-    return (profiles[m] || DEFAULT_PROFILES[m] || { emoji: '👤' }).emoji;
-  }
-  function addHistory(entry) {
-    return [entry, ...history].slice(0, 300);
-  }
-
-  function selectMember(m) {
-    setSelectedMember(m);
-    setPin('');
-    setPinError(false);
-    setScreen('pin');
-  }
-  function logout() {
-    setScreen('home');
-    setSelectedMember(null);
-    setPin('');
-  }
-
-  const wk = weekKey();
-  function getTableSetter() {
-    return tableRota[wk] || null;
-  }
-  function whoSetsTableToday() {
-    const setter = getTableSetter();
-    if (!setter) return null;
-    const d = new Date().getDay();
-    const daysFromMon = d === 0 ? 6 : d - 1;
-    return ['Michel', 'Gabrielle'][
-      (['Michel', 'Gabrielle'].indexOf(setter) + daysFromMon) % 2
-    ];
-  }
-  function whoClearsTableToday() {
-    const s = whoSetsTableToday();
-    return s ? (s === 'Michel' ? 'Gabrielle' : 'Michel') : null;
-  }
-  function registerTableRota(member) {
-    if (new Date().getDay() === 1 && !tableRota[wk]) {
-      const nr = { ...tableRota, [wk]: member };
-      setTableRota(nr);
-      sv('fc_tablerota', nr);
+  useEffect(()=>{
+    if(screen==="app"&&selectedMember){
+      try{
+        const seen=JSON.parse(localStorage.getItem("fc_seen")||"[]");
+        if(!seen.includes(selectedMember)){setFirstLogin(true);setRulesPage(0);}
+      }catch{}
     }
+  },[screen,selectedMember]);
+
+  function sv(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+  function pc(m){return(profiles[m]||DEFAULT_PROFILES[m]||{color:"#888"}).color;}
+  function pe(m){return(profiles[m]||DEFAULT_PROFILES[m]||{emoji:"👤"}).emoji;}
+  function addHistory(entry){return[entry,...history].slice(0,300);}
+
+  function selectMember(m){setSelectedMember(m);setPin("");setPinError(false);setScreen("pin");}
+  function logout(){setScreen("home");setSelectedMember(null);setPin("");}
+
+  function dismissRules(){
+    try{const seen=JSON.parse(localStorage.getItem("fc_seen")||"[]");if(!seen.includes(selectedMember)){seen.push(selectedMember);localStorage.setItem("fc_seen",JSON.stringify(seen));}}catch{}
+    setFirstLogin(false);setRulesPage(0);
   }
-  function kidsCommonCount() {
-    const c = { Michel: 0, Gabrielle: 0 };
-    history
-      .filter(
-        (h) =>
-          h.weekKey === wk && h.type === 'commune' && KIDS.includes(h.member)
-      )
-      .forEach((h) => {
-        c[h.member] = (c[h.member] || 0) + 1;
-      });
+
+  const wk=weekKey();
+  function getTableSetter(){return tableRota[wk]||null;}
+  function whoSetsTableToday(){
+    const setter=getTableSetter();if(!setter)return null;
+    const d=new Date().getDay();const daysFromMon=(d===0?6:d-1);
+    return["Michel","Gabrielle"][(["Michel","Gabrielle"].indexOf(setter)+daysFromMon)%2];
+  }
+  function whoClearsTableToday(){const s=whoSetsTableToday();return s?(s==="Michel"?"Gabrielle":"Michel"):null;}
+  function registerTableRota(member){
+    if(new Date().getDay()===1&&!tableRota[wk]){const nr={...tableRota,[wk]:member};setTableRota(nr);sv("fc_tablerota",nr);}
+  }
+  function kidsCommonCount(){
+    const c={Michel:0,Gabrielle:0};
+    history.filter(h=>h.weekKey===wk&&h.type==="commune"&&KIDS.includes(h.member)).forEach(h=>{c[h.member]=(c[h.member]||0)+1;});
     return c;
   }
 
-  function claimShared(task) {
-    const key = `${today}|shared|${task}`;
-    const setter = whoSetsTableToday();
-    const clearer = whoClearsTableToday();
-    if (task === 'Mettre la table' && setter && selectedMember !== setter) {
-      alert(`C'est ${setter} qui met la table aujourd'hui !`);
-      return;
-    }
-    if (
-      task === 'Débarrasser la table' &&
-      clearer &&
-      selectedMember !== clearer
-    ) {
-      alert(`C'est ${clearer} qui débarrasse aujourd'hui !`);
-      return;
-    }
-    if (done[key]) {
-      const member = done[key];
-      const nd = { ...done };
-      delete nd[key];
-      const np = {
-        ...points,
-        [member]: Math.max(0, (points[member] || 0) - 1),
-      };
-      const nh = history.filter(
-        (h) => !(h.task === task && h.dayKey === today && h.type === 'commune')
-      );
-      setDone(nd);
-      setPoints(np);
-      setHistory(nh);
-      sv('fc_done', nd);
-      sv('fc_pts', np);
-      sv('fc_hist', nh);
-    } else {
-      const member = selectedMember;
-      if (task === 'Mettre la table' && KIDS.includes(member))
-        registerTableRota(member);
-      const nd = { ...done, [key]: member };
-      const np = { ...points, [member]: (points[member] || 0) + 1 };
-      const nh = addHistory({
-        member,
-        task,
-        date: new Date().toLocaleDateString('fr-FR'),
-        dayKey: today,
-        weekKey: wk,
-        type: 'commune',
-      });
-      setDone(nd);
-      setPoints(np);
-      setHistory(nh);
-      sv('fc_done', nd);
-      sv('fc_pts', np);
-      sv('fc_hist', nh);
-      if (COUPLE.includes(member))
-        setGageAlert({ type: 'common', member, task });
+  function claimShared(task){
+    const key=`${today}|shared|${task}`;
+    const setter=whoSetsTableToday();const clearer=whoClearsTableToday();
+    if(task==="Mettre la table"&&setter&&selectedMember!==setter){alert(`C'est ${setter} qui met la table aujourd'hui !`);return;}
+    if(task==="Débarrasser la table"&&clearer&&selectedMember!==clearer){alert(`C'est ${clearer} qui débarrasse aujourd'hui !`);return;}
+    if(done[key]){
+      const member=done[key];const nd={...done};delete nd[key];
+      const np={...points,[member]:Math.max(0,(points[member]||0)-1)};
+      const nh=history.filter(h=>!(h.task===task&&h.dayKey===today&&h.type==="commune"));
+      setDone(nd);setPoints(np);setHistory(nh);sv("fc_done",nd);sv("fc_pts",np);sv("fc_hist",nh);
+    }else{
+      const member=selectedMember;
+      if(task==="Mettre la table"&&KIDS.includes(member))registerTableRota(member);
+      const nd={...done,[key]:member};
+      const np={...points,[member]:(points[member]||0)+1};
+      const nh=addHistory({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"commune"});
+      setDone(nd);setPoints(np);setHistory(nh);sv("fc_done",nd);sv("fc_pts",np);sv("fc_hist",nh);
+      if(COUPLE.includes(member))setGageAlert({type:"common",member,task});
     }
   }
-  function claimCouple(task) {
-    if (!COUPLE.includes(selectedMember)) return;
-    const key = `${wk}|couple|${task}`;
-    if (done[key]) {
-      const member = done[key];
-      const nd = { ...done };
-      delete nd[key];
-      const np = {
-        ...points,
-        [member]: Math.max(0, (points[member] || 0) - 1),
-      };
-      const nh = history.filter(
-        (h) => !(h.task === task && h.weekKey === wk && h.type === 'couple')
-      );
-      setDone(nd);
-      setPoints(np);
-      setHistory(nh);
-      sv('fc_done', nd);
-      sv('fc_pts', np);
-      sv('fc_hist', nh);
-    } else {
-      const member = selectedMember;
-      const nd = { ...done, [key]: member };
-      const np = { ...points, [member]: (points[member] || 0) + 1 };
-      const nh = addHistory({
-        member,
-        task,
-        date: new Date().toLocaleDateString('fr-FR'),
-        dayKey: today,
-        weekKey: wk,
-        type: 'couple',
-      });
-      setDone(nd);
-      setPoints(np);
-      setHistory(nh);
-      sv('fc_done', nd);
-      sv('fc_pts', np);
-      sv('fc_hist', nh);
+  function claimCouple(task){
+    if(!COUPLE.includes(selectedMember))return;
+    const key=`${wk}|couple|${task}`;
+    if(done[key]){
+      const member=done[key];const nd={...done};delete nd[key];
+      const np={...points,[member]:Math.max(0,(points[member]||0)-1)};
+      const nh=history.filter(h=>!(h.task===task&&h.weekKey===wk&&h.type==="couple"));
+      setDone(nd);setPoints(np);setHistory(nh);sv("fc_done",nd);sv("fc_pts",np);sv("fc_hist",nh);
+    }else{
+      const member=selectedMember;
+      const nd={...done,[key]:member};
+      const np={...points,[member]:(points[member]||0)+1};
+      const nh=addHistory({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"couple"});
+      setDone(nd);setPoints(np);setHistory(nh);sv("fc_done",nd);sv("fc_pts",np);sv("fc_hist",nh);
     }
   }
-  function togglePersonal(pm, task) {
-    const key = `${wk}|personal|${pm}|${task}`;
-    const nd = { ...done };
-    const np = { ...points };
-    if (nd[key]) {
-      delete nd[key];
-      np[pm] = Math.max(0, (np[pm] || 0) - 1);
-      const nh = history.filter(
-        (h) =>
-          !(
-            h.task === task &&
-            h.member === pm &&
-            h.weekKey === wk &&
-            h.type === 'perso'
-          )
-      );
-      setHistory(nh);
-      sv('fc_hist', nh);
-    } else {
-      nd[key] = true;
-      np[pm] = (np[pm] || 0) + 1;
-      const nh = addHistory({
-        member: pm,
-        task,
-        date: new Date().toLocaleDateString('fr-FR'),
-        dayKey: today,
-        weekKey: wk,
-        type: 'perso',
-      });
-      setHistory(nh);
-      sv('fc_hist', nh);
-    }
-    setDone(nd);
-    setPoints(np);
-    sv('fc_done', nd);
-    sv('fc_pts', np);
+  function togglePersonal(pm,task){
+    const key=`${wk}|personal|${pm}|${task}`;
+    const nd={...done};const np={...points};
+    if(nd[key]){delete nd[key];np[pm]=Math.max(0,(np[pm]||0)-1);const nh=history.filter(h=>!(h.task===task&&h.member===pm&&h.weekKey===wk&&h.type==="perso"));setHistory(nh);sv("fc_hist",nh);}
+    else{nd[key]=true;np[pm]=(np[pm]||0)+1;const nh=addHistory({member:pm,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"perso"});setHistory(nh);sv("fc_hist",nh);}
+    setDone(nd);setPoints(np);sv("fc_done",nd);sv("fc_pts",np);
   }
-  function nextWeek() {
-    const late = Object.keys(profiles).filter((m) => {
-      const personal = PERSONAL_TASKS[m] || [];
-      const hasUndonePerso = personal.some(
-        (t) => !done[`${wk}|personal|${m}|${t}`]
-      );
-      const hasUndoneCouple =
-        COUPLE.includes(m) &&
-        COUPLE_POOL.some((t) => !done[`${wk}|couple|${t}`]);
-      return hasUndonePerso || hasUndoneCouple;
+  function nextWeek(){
+    const late=Object.keys(profiles).filter(m=>{
+      const personal=PERSONAL_TASKS[m]||[];
+      const hasUndonePerso=personal.some(t=>!done[`${wk}|personal|${m}|${t}`]);
+      const hasUndoneCouple=COUPLE.includes(m)&&COUPLE_POOL.some(t=>!done[`${wk}|couple|${t}`]);
+      return hasUndonePerso||hasUndoneCouple;
     });
-    setLateMembers(late);
-    setEndWeekModal(true);
+    setLateMembers(late);setEndWeekModal(true);
   }
-  function doNextWeek() {
-    const nd = Object.fromEntries(
-      Object.entries(done).filter(([k]) => k.includes('|shared|'))
-    );
-    const nu = {};
-    setUnlockedShown(nu);
-    setDone(nd);
-    sv('fc_done', nd);
-    sv('fc_unlocked', nu);
-    setEndWeekModal(false);
-    setLateMembers([]);
+  function doNextWeek(){
+    const nd=Object.fromEntries(Object.entries(done).filter(([k])=>k.includes("|shared|")));
+    const nu={};setUnlockedShown(nu);setDone(nd);sv("fc_done",nd);sv("fc_unlocked",nu);
+    setEndWeekModal(false);setLateMembers([]);
   }
-  function dismissUnlock(kid) {
-    const nu = { ...unlockedShown, [kid]: true };
-    setUnlockedShown(nu);
-    sv('fc_unlocked', nu);
+  function dismissUnlock(kid){const nu={...unlockedShown,[kid]:true};setUnlockedShown(nu);sv("fc_unlocked",nu);}
+  function kidChallenge(kid){
+    const personal=PERSONAL_TASKS[kid]||[];const total=personal.length;if(!total)return{done:0,total:0,pct:0,unlocked:false};
+    const d=personal.filter(t=>done[`${wk}|personal|${kid}|${t}`]).length;
+    return{done:d,total,pct:Math.round((d/total)*100),unlocked:d===total};
   }
-  function kidChallenge(kid) {
-    const personal = PERSONAL_TASKS[kid] || [];
-    const total = personal.length;
-    if (!total) return { done: 0, total: 0, pct: 0, unlocked: false };
-    const d = personal.filter((t) => done[`${wk}|personal|${kid}|${t}`]).length;
-    return {
-      done: d,
-      total,
-      pct: Math.round((d / total) * 100),
-      unlocked: d === total,
-    };
-  }
-  function openEditProfile() {
-    setEditEmoji(pe(selectedMember));
-    setEditColor(pc(selectedMember));
-    setEditPin(profiles[selectedMember]?.pin || '1234');
-    setEditReward(rewards[selectedMember] || '');
-    setEditingProfile(true);
-  }
-  function saveProfile() {
-    const np = {
-      ...profiles,
-      [selectedMember]: {
-        ...profiles[selectedMember],
-        emoji: editEmoji,
-        color: editColor,
-        pin: editPin,
-      },
-    };
-    setProfiles(np);
-    sv('fc_profiles', np);
-    if (KIDS.includes(selectedMember)) {
-      const nr = { ...rewards, [selectedMember]: editReward };
-      setRewards(nr);
-      sv('fc_rewards', nr);
-    }
+  function openEditProfile(){setEditEmoji(pe(selectedMember));setEditColor(pc(selectedMember));setEditPin(profiles[selectedMember]?.pin||"0000");setEditReward(rewards[selectedMember]||"");setEditingProfile(true);}
+  function saveProfile(){
+    const np={...profiles,[selectedMember]:{...profiles[selectedMember],emoji:editEmoji,color:editColor,pin:editPin}};
+    setProfiles(np);sv("fc_profiles",np);
+    if(KIDS.includes(selectedMember)){const nr={...rewards,[selectedMember]:editReward};setRewards(nr);sv("fc_rewards",nr);}
     setEditingProfile(false);
   }
 
-  const color = pc(selectedMember);
-  const emoji = pe(selectedMember);
-  const sharedDone = SHARED_DAILY.filter(
-    (t) => done[`${today}|shared|${t}`]
-  ).length;
-  const coupleDone = COUPLE_POOL.filter(
-    (t) => done[`${wk}|couple|${t}`]
-  ).length;
-  const isCouple = COUPLE.includes(selectedMember);
-  const isKid = KIDS.includes(selectedMember);
-  const yday = yesterdayKey();
-  const filteredHist = history.filter((h) => {
-    if (histFilter === 'today') return h.dayKey === today;
-    if (histFilter === 'yesterday') return h.dayKey === yday;
-    if (histFilter === 'week') return h.weekKey === wk;
+  const color=pc(selectedMember);
+  const emoji=pe(selectedMember);
+  const sharedDone=SHARED_DAILY.filter(t=>done[`${today}|shared|${t}`]).length;
+  const coupleDone=COUPLE_POOL.filter(t=>done[`${wk}|couple|${t}`]).length;
+  const isCouple=COUPLE.includes(selectedMember);
+  const isKid=KIDS.includes(selectedMember);
+  const yday=yesterdayKey();
+  const filteredHist=history.filter(h=>{
+    if(histFilter==="today")return h.dayKey===today;
+    if(histFilter==="yesterday")return h.dayKey===yday;
+    if(histFilter==="week")return h.weekKey===wk;
     return true;
   });
-
-  const typeBadgeStyle = (type) => {
-    const map = {
-      commune: { bg: '#EDE9FE', c: '#7C3AED' },
-      perso: { bg: '#E0F2FE', c: '#0284C7' },
-      couple: { bg: '#DCFCE7', c: '#16A34A' },
-      hebdo: { bg: '#FEF9C3', c: '#A16207' },
-    };
-    const x = map[type] || map.hebdo;
-    return {
-      fontSize: 10,
-      padding: '2px 7px',
-      borderRadius: 99,
-      background: x.bg,
-      color: x.c,
-      fontWeight: 600,
-      whiteSpace: 'nowrap',
-    };
+  const typeBadgeStyle=(type)=>{
+    const map={commune:{bg:"#EDE9FE",c:"#7C3AED"},perso:{bg:"#E0F2FE",c:"#0284C7"},couple:{bg:"#DCFCE7",c:"#16A34A"},hebdo:{bg:"#FEF9C3",c:"#A16207"}};
+    const x=map[type]||map.hebdo;return{fontSize:10,padding:"2px 7px",borderRadius:99,background:x.bg,color:x.c,fontWeight:600,whiteSpace:"nowrap"};
   };
 
-  // HOME
-  if (screen === 'home')
-    return (
-      <div
-        style={{
-          minHeight: '100vh',
-          background: '#f5f5f7',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '2rem 1rem',
-        }}
-      >
-        <div style={{ width: '100%', maxWidth: 400 }}>
-          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-            <div style={{ fontSize: 48, marginBottom: 8 }}>🏠</div>
-            <h1
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                color: '#1a1a2e',
-                margin: '0 0 4px',
-              }}
-            >
-              FamilyChores
-            </h1>
-            <p style={{ fontSize: 14, color: '#888', margin: 0 }}>
-              Qui es-tu aujourd'hui ?
-            </p>
-          </div>
-          <div
-            style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}
-          >
-            {Object.keys(profiles).map((m) => {
-              const c = pc(m);
-              const e = pe(m);
-              return (
-                <button
-                  key={m}
-                  onClick={() => selectMember(m)}
-                  style={{
-                    background: '#fff',
-                    border: `2px solid ${c}22`,
-                    borderRadius: 22,
-                    padding: '1.5rem 1rem',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                    boxShadow: `0 4px 16px ${c}22`,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 60,
-                      height: 60,
-                      borderRadius: 30,
-                      background: `${c}22`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 30,
-                      margin: '0 auto 10px',
-                    }}
-                  >
-                    {e}
-                  </div>
-                  <p
-                    style={{
-                      fontWeight: 700,
-                      fontSize: 16,
-                      color: '#1a1a2e',
-                      margin: '0 0 4px',
-                    }}
-                  >
-                    {m}
-                  </p>
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: c,
-                      margin: 0,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {points[m] || 0} pts
-                  </p>
-                </button>
-              );
-            })}
-          </div>
+  if(screen==="home")return(
+    <div style={{minHeight:"100vh",background:"#f5f5f7",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"2rem 1rem"}}>
+      <div style={{width:"100%",maxWidth:400}}>
+        <div style={{textAlign:"center",marginBottom:"2rem"}}>
+          <div style={{fontSize:48,marginBottom:8}}>🏠</div>
+          <h1 style={{fontSize:28,fontWeight:700,color:"#1a1a2e",margin:"0 0 4px"}}>FamilyChores</h1>
+          <p style={{fontSize:14,color:"#888",margin:0}}>Qui es-tu aujourd'hui ?</p>
         </div>
-      </div>
-    );
-
-  // PIN
-  if (screen === 'pin')
-    return (
-      <div
-        style={{
-          minHeight: '100vh',
-          background: '#f5f5f7',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '2rem 1rem',
-        }}
-      >
-        <div style={{ width: '100%', maxWidth: 320, textAlign: 'center' }}>
-          <div
-            style={{
-              width: 76,
-              height: 76,
-              borderRadius: 38,
-              background: `${pc(selectedMember)}22`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 38,
-              margin: '0 auto 12px',
-            }}
-          >
-            {pe(selectedMember)}
-          </div>
-          <h2
-            style={{
-              fontSize: 22,
-              fontWeight: 700,
-              color: '#1a1a2e',
-              margin: '0 0 4px',
-            }}
-          >
-            {selectedMember}
-          </h2>
-          <p style={{ fontSize: 14, color: '#888', margin: '0 0 2rem' }}>
-            Entre ton code PIN
-          </p>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              gap: 14,
-              marginBottom: '1.5rem',
-            }}
-          >
-            {[0, 1, 2, 3].map((i) => (
-              <div
-                key={i}
-                style={{
-                  width: 15,
-                  height: 15,
-                  borderRadius: 8,
-                  background: pin.length > i ? pc(selectedMember) : '#ddd',
-                  transition: 'background 0.2s',
-                }}
-              />
-            ))}
-          </div>
-          {pinError && (
-            <p style={{ color: '#ef4444', fontSize: 13, marginBottom: '1rem' }}>
-              Code incorrect, réessaie.
-            </p>
-          )}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3,1fr)',
-              gap: 10,
-              maxWidth: 260,
-              margin: '0 auto 1.5rem',
-            }}
-          >
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map((k, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  if (k === '⌫') {
-                    setPin((p) => p.slice(0, -1));
-                    setPinError(false);
-                  } else if (k !== '') {
-                    const np = pin + k;
-                    setPin(np);
-                    if (np.length === 4) {
-                      const correct = (profiles[selectedMember] || {}).pin;
-                      if (np === correct) {
-                        setScreen('app');
-                        setPage('tasks');
-                        setPinError(false);
-                      } else {
-                        setPinError(true);
-                        setPin('');
-                      }
-                    }
-                  }
-                }}
-                style={{
-                  height: 60,
-                  borderRadius: 18,
-                  background: k === '' ? 'transparent' : '#fff',
-                  border: k === '' ? 'none' : '1.5px solid #eee',
-                  fontSize: 22,
-                  fontWeight: 600,
-                  color: '#1a1a2e',
-                  cursor: k === '' ? 'default' : 'pointer',
-                  boxShadow: k === '' ? 'none' : '0 2px 6px #0001',
-                }}
-              >
-                {k}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+          {Object.keys(profiles).map(m=>{
+            const c=pc(m);const e=pe(m);
+            return(
+              <button key={m} onClick={()=>selectMember(m)} style={{background:"#fff",border:`2px solid ${c}22`,borderRadius:22,padding:"1.5rem 1rem",cursor:"pointer",textAlign:"center",boxShadow:`0 4px 16px ${c}22`}}>
+                <div style={{width:60,height:60,borderRadius:30,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 10px"}}>{e}</div>
+                <p style={{fontWeight:700,fontSize:16,color:"#1a1a2e",margin:"0 0 4px"}}>{m}</p>
+                <p style={{fontSize:13,color:c,margin:0,fontWeight:600}}>{points[m]||0} pts</p>
               </button>
-            ))}
-          </div>
-          <button
-            onClick={() => setScreen('home')}
-            style={{
-              fontSize: 14,
-              color: '#aaa',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-            }}
-          >
-            ← Changer de membre
-          </button>
+            );
+          })}
         </div>
       </div>
-    );
+    </div>
+  );
 
-  // APP
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#f5f5f7',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: 480, flex: 1, paddingBottom: 80 }}>
-        <div
-          style={{
-            background: '#fff',
-            borderRadius: '0 0 24px 24px',
-            padding: '1rem 1.25rem 1.25rem',
-            marginBottom: 14,
-            boxShadow: '0 2px 12px #0000000a',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: 23,
-                  background: `${color}22`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 24,
-                }}
-              >
-                {emoji}
-              </div>
+  if(screen==="pin")return(
+    <div style={{minHeight:"100vh",background:"#f5f5f7",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"2rem 1rem"}}>
+      <div style={{width:"100%",maxWidth:320,textAlign:"center"}}>
+        <div style={{width:76,height:76,borderRadius:38,background:`${pc(selectedMember)}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,margin:"0 auto 12px"}}>{pe(selectedMember)}</div>
+        <h2 style={{fontSize:22,fontWeight:700,color:"#1a1a2e",margin:"0 0 4px"}}>{selectedMember}</h2>
+        <p style={{fontSize:14,color:"#888",margin:"0 0 2rem"}}>Entre ton code PIN</p>
+        <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:"1.5rem"}}>
+          {[0,1,2,3].map(i=><div key={i} style={{width:15,height:15,borderRadius:8,background:pin.length>i?pc(selectedMember):"#ddd",transition:"background 0.2s"}}/>)}
+        </div>
+        {pinError&&<p style={{color:"#ef4444",fontSize:13,marginBottom:"1rem"}}>Code incorrect, réessaie.</p>}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,maxWidth:260,margin:"0 auto 1.5rem"}}>
+          {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((k,i)=>(
+            <button key={i} onClick={()=>{
+              if(k==="⌫"){setPin(p=>p.slice(0,-1));setPinError(false);}
+              else if(k!==""){
+                const np=pin+k;setPin(np);
+                if(np.length===4){
+                  const correct=(profiles[selectedMember]||{}).pin;
+                  if(np===correct){setScreen("app");setPage("tasks");setPinError(false);}
+                  else{setPinError(true);setPin("");}
+                }
+              }
+            }} style={{height:60,borderRadius:18,background:k===""?"transparent":"#fff",border:k===""?"none":"1.5px solid #eee",fontSize:22,fontWeight:600,color:"#1a1a2e",cursor:k===""?"default":"pointer",boxShadow:k===""?"none":"0 2px 6px #0001"}}>
+              {k}
+            </button>
+          ))}
+        </div>
+        <button onClick={()=>setScreen("home")} style={{fontSize:14,color:"#aaa",background:"none",border:"none",cursor:"pointer"}}>← Changer de membre</button>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{minHeight:"100vh",background:"#f5f5f7",display:"flex",flexDirection:"column",alignItems:"center"}}>
+      <div style={{width:"100%",maxWidth:480,flex:1,paddingBottom:80}}>
+
+        <div style={{background:"#fff",borderRadius:"0 0 24px 24px",padding:"1rem 1.25rem 1.25rem",marginBottom:14,boxShadow:"0 2px 12px #0000000a"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:46,height:46,borderRadius:23,background:`${color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>{emoji}</div>
               <div>
-                <p
-                  style={{
-                    fontWeight: 700,
-                    fontSize: 16,
-                    color: '#1a1a2e',
-                    margin: 0,
-                  }}
-                >
-                  Bonjour, {selectedMember} !
-                </p>
-                <p
-                  style={{
-                    fontSize: 12,
-                    color: color,
-                    margin: 0,
-                    fontWeight: 600,
-                  }}
-                >
-                  {points[selectedMember] || 0} points
-                </p>
+                <p style={{fontWeight:700,fontSize:16,color:"#1a1a2e",margin:0}}>Bonjour, {selectedMember} !</p>
+                <p style={{fontSize:12,color:color,margin:0,fontWeight:600}}>{points[selectedMember]||0} points</p>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={openEditProfile}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 19,
-                  background: `${color}15`,
-                  border: 'none',
-                  fontSize: 17,
-                  cursor: 'pointer',
-                }}
-              >
-                ✏️
-              </button>
-              <button
-                onClick={logout}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 19,
-                  background: '#f5f5f7',
-                  border: 'none',
-                  fontSize: 17,
-                  cursor: 'pointer',
-                }}
-              >
-                🚪
-              </button>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={openEditProfile} style={{width:38,height:38,borderRadius:19,background:`${color}15`,border:"none",fontSize:17,cursor:"pointer"}}>✏️</button>
+              <button onClick={logout} style={{width:38,height:38,borderRadius:19,background:"#f5f5f7",border:"none",fontSize:17,cursor:"pointer"}}>🚪</button>
             </div>
           </div>
         </div>
 
-        <div style={{ padding: '0 1rem' }}>
-          {isKid &&
-            kidChallenge(selectedMember).unlocked &&
-            !unlockedShown[selectedMember] && (
-              <div
-                style={{
-                  background: `${color}15`,
-                  border: `2px solid ${color}`,
-                  borderRadius: 20,
-                  padding: '1rem',
-                  marginBottom: 14,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <div>
-                  <p
-                    style={{
-                      fontWeight: 700,
-                      fontSize: 14,
-                      color,
-                      margin: '0 0 2px',
-                    }}
-                  >
-                    🏆 Challenge débloqué !
-                  </p>
-                  <p style={{ fontSize: 13, color: '#1a1a2e', margin: 0 }}>
-                    {rewards[selectedMember] || 'Récompense !'}
-                  </p>
-                </div>
-                <button
-                  onClick={() => dismissUnlock(selectedMember)}
-                  style={{
-                    background: color,
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 12,
-                    padding: '7px 16px',
-                    fontWeight: 700,
-                    fontSize: 13,
-                    cursor: 'pointer',
-                  }}
-                >
-                  OK !
-                </button>
+        <div style={{padding:"0 1rem"}}>
+
+        {isKid&&kidChallenge(selectedMember).unlocked&&!unlockedShown[selectedMember]&&(
+          <div style={{background:`${color}15`,border:`2px solid ${color}`,borderRadius:20,padding:"1rem",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div>
+              <p style={{fontWeight:700,fontSize:14,color,margin:"0 0 2px"}}>🏆 Challenge débloqué !</p>
+              <p style={{fontSize:13,color:"#1a1a2e",margin:0}}>{rewards[selectedMember]||"Récompense !"}</p>
+            </div>
+            <button onClick={()=>dismissUnlock(selectedMember)} style={{background:color,color:"#fff",border:"none",borderRadius:12,padding:"7px 16px",fontWeight:700,fontSize:13,cursor:"pointer"}}>OK !</button>
+          </div>
+        )}
+
+        {page==="tasks"&&(
+          <>
+            <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>Tâches hebdomadaires Michel &amp; Gabrielle</p>
+                <span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:"#f0f0f5",color:"#888",fontWeight:500}}>{sharedDone}/{SHARED_DAILY.length}</span>
               </div>
-            )}
-
-          {page === 'tasks' && (
-            <>
-              <div
-                style={{
-                  background: '#fff',
-                  borderRadius: 20,
-                  padding: '1rem',
-                  marginBottom: 14,
-                  boxShadow: '0 1px 8px #0000000a',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: 10,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontWeight: 700,
-                      fontSize: 15,
-                      color: '#1a1a2e',
-                      margin: 0,
-                    }}
-                  >
-                    Tâches communes
-                  </p>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      padding: '3px 9px',
-                      borderRadius: 99,
-                      background: '#f0f0f5',
-                      color: '#888',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {sharedDone}/{SHARED_DAILY.length}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    height: 5,
-                    borderRadius: 3,
-                    background: '#f0f0f5',
-                    marginBottom: 10,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      height: '100%',
-                      borderRadius: 3,
-                      background: color,
-                      width: `${
-                        SHARED_DAILY.length
-                          ? (sharedDone / SHARED_DAILY.length) * 100
-                          : 0
-                      }%`,
-                      transition: 'width 0.3s',
-                    }}
-                  />
-                </div>
-                {SHARED_DAILY.map((task) => {
-                  const key = `${today}|shared|${task}`;
-                  const cb = done[key];
-                  return (
-                    <div
-                      key={task}
-                      onClick={() => claimShared(task)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '11px 0',
-                        borderBottom: '1px solid #f5f5f7',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 26,
-                          height: 26,
-                          borderRadius: 13,
-                          border: cb ? 'none' : `2px solid ${color}44`,
-                          background: cb ? pc(cb) : 'transparent',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {cb && <Tick />}
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 14,
-                          color: cb ? '#bbb' : '#1a1a2e',
-                          textDecoration: cb ? 'line-through' : 'none',
-                          flex: 1,
-                        }}
-                      >
-                        {task}
-                      </span>
-                      {cb ? (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            padding: '2px 8px',
-                            borderRadius: 99,
-                            background: `${pc(cb)}22`,
-                            color: pc(cb),
-                            fontWeight: 600,
-                          }}
-                        >
-                          {cb}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 20 }}>
-                          {pe(selectedMember)}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+              <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}>
+                <div style={{height:"100%",borderRadius:3,background:color,width:`${SHARED_DAILY.length?(sharedDone/SHARED_DAILY.length)*100:0}%`,transition:"width 0.3s"}}/>
               </div>
-
-              {(() => {
-                const counts = kidsCommonCount();
-                const mS = counts['Michel'] || 0;
-                const gS = counts['Gabrielle'] || 0;
-                const total = mS + gS || 1;
-                const setter = whoSetsTableToday();
-                return (
-                  <div
-                    style={{
-                      background: '#fff',
-                      borderRadius: 20,
-                      padding: '1rem',
-                      marginBottom: 14,
-                      boxShadow: '0 1px 8px #0000000a',
-                    }}
-                  >
-                    <p
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 15,
-                        color: '#1a1a2e',
-                        margin: '0 0 10px',
-                      }}
-                    >
-                      ⚔️ Michel vs Gabrielle
-                    </p>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        marginBottom: 4,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: pc('Michel'),
-                          minWidth: 54,
-                        }}
-                      >
-                        {pe('Michel')} {mS}
-                      </span>
-                      <div
-                        style={{
-                          flex: 1,
-                          height: 10,
-                          borderRadius: 5,
-                          background: '#f0f0f5',
-                          overflow: 'hidden',
-                          display: 'flex',
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: '100%',
-                            background: pc('Michel'),
-                            width: `${(mS / total) * 100}%`,
-                            transition: 'width 0.4s',
-                          }}
-                        />
-                        <div
-                          style={{
-                            height: '100%',
-                            background: pc('Gabrielle'),
-                            width: `${(gS / total) * 100}%`,
-                            transition: 'width 0.4s',
-                          }}
-                        />
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: pc('Gabrielle'),
-                          minWidth: 54,
-                          textAlign: 'right',
-                        }}
-                      >
-                        {gS} {pe('Gabrielle')}
-                      </span>
+              {SHARED_DAILY.map(task=>{
+                const key=`${today}|shared|${task}`;const cb=done[key];
+                return(
+                  <div key={task} onClick={()=>claimShared(task)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #f5f5f7",cursor:"pointer"}}>
+                    <div style={{width:26,height:26,borderRadius:13,border:cb?"none":`2px solid ${color}44`,background:cb?pc(cb):"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      {cb&&<Tick/>}
                     </div>
-                    <p
-                      style={{
-                        fontSize: 11,
-                        color: '#aaa',
-                        textAlign: 'center',
-                        margin: '0 0 12px',
-                      }}
-                    >
-                      Tâches communes · récompense au meilleur !
-                    </p>
-                    <div
-                      style={{ borderTop: '1px solid #f5f5f7', paddingTop: 10 }}
-                    >
-                      <p
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: '#888',
-                          margin: '0 0 8px',
-                        }}
-                      >
-                        🍽️ Table aujourd'hui
-                      </p>
-                      {!getTableSetter() ? (
-                        <p style={{ fontSize: 12, color: '#aaa', margin: 0 }}>
-                          Le 1er enfant à mettre la table ce lundi définit le
-                          roulement.
-                        </p>
-                      ) : (
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          {[
-                            {
-                              kid: 'Michel',
-                              role:
-                                setter === 'Michel'
-                                  ? 'Mettre la table'
-                                  : 'Débarrasser',
-                            },
-                            {
-                              kid: 'Gabrielle',
-                              role:
-                                setter === 'Gabrielle'
-                                  ? 'Mettre la table'
-                                  : 'Débarrasser',
-                            },
-                          ].map(({ kid, role }) => (
-                            <div
-                              key={kid}
-                              style={{
-                                flex: 1,
-                                background: `${pc(kid)}12`,
-                                borderRadius: 14,
-                                padding: '8px',
-                                textAlign: 'center',
-                              }}
-                            >
-                              <div style={{ fontSize: 20 }}>{pe(kid)}</div>
-                              <p
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: 700,
-                                  color: pc(kid),
-                                  margin: '3px 0 1px',
-                                }}
-                              >
-                                {kid}
-                              </p>
-                              <p
-                                style={{
-                                  fontSize: 11,
-                                  color: '#888',
-                                  margin: 0,
-                                }}
-                              >
-                                {role}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div
-                style={{
-                  background: '#fff',
-                  borderRadius: 20,
-                  padding: '1rem',
-                  marginBottom: 14,
-                  boxShadow: '0 1px 8px #0000000a',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: 10,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontWeight: 700,
-                      fontSize: 15,
-                      color: '#1a1a2e',
-                      margin: 0,
-                    }}
-                  >
-                    Maman &amp; Papou
-                  </p>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      padding: '3px 9px',
-                      borderRadius: 99,
-                      background: '#f0f0f5',
-                      color: '#888',
-                      fontWeight: 500,
-                    }}
-                  >
-                    {coupleDone}/{COUPLE_POOL.length} semaine
-                  </span>
-                </div>
-                <div
-                  style={{
-                    height: 5,
-                    borderRadius: 3,
-                    background: '#f0f0f5',
-                    marginBottom: 10,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      height: '100%',
-                      borderRadius: 3,
-                      background: '#5DCAA5',
-                      width: `${
-                        COUPLE_POOL.length
-                          ? (coupleDone / COUPLE_POOL.length) * 100
-                          : 0
-                      }%`,
-                      transition: 'width 0.3s',
-                    }}
-                  />
-                </div>
-                {COUPLE_POOL.map((task) => {
-                  const key = `${wk}|couple|${task}`;
-                  const cb = done[key];
-                  return (
-                    <div
-                      key={task}
-                      onClick={() => claimCouple(task)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '11px 0',
-                        borderBottom: '1px solid #f5f5f7',
-                        cursor: isCouple ? 'pointer' : 'default',
-                        opacity: !isCouple && !cb ? 0.5 : 1,
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 26,
-                          height: 26,
-                          borderRadius: 13,
-                          border: cb
-                            ? 'none'
-                            : `2px solid ${isCouple ? color + '44' : '#ddd'}`,
-                          background: cb ? pc(cb) : 'transparent',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {cb && <Tick />}
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 14,
-                          color: cb ? '#bbb' : '#1a1a2e',
-                          textDecoration: cb ? 'line-through' : 'none',
-                          flex: 1,
-                        }}
-                      >
-                        {task}
-                      </span>
-                      {cb ? (
-                        <span
-                          style={{
-                            fontSize: 11,
-                            padding: '2px 8px',
-                            borderRadius: 99,
-                            background: `${pc(cb)}22`,
-                            color: pc(cb),
-                            fontWeight: 600,
-                          }}
-                        >
-                          {cb}
-                        </span>
-                      ) : (
-                        !isCouple && (
-                          <span style={{ fontSize: 11, color: '#ccc' }}>
-                            Maman/Papou
-                          </span>
-                        )
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {Object.keys(profiles)
-                .filter((m) => (PERSONAL_TASKS[m] || []).length > 0)
-                .map((pm) => {
-                  const pmTasks = PERSONAL_TASKS[pm] || [];
-                  const pmDone = pmTasks.filter(
-                    (t) => done[`${wk}|personal|${pm}|${t}`]
-                  ).length;
-                  const pmC = pc(pm);
-                  const pmE = pe(pm);
-                  const isOwn = pm === selectedMember;
-                  return (
-                    <div
-                      key={pm}
-                      style={{
-                        background: '#fff',
-                        borderRadius: 20,
-                        padding: '1rem',
-                        marginBottom: 14,
-                        boxShadow: '0 1px 8px #0000000a',
-                        border: isOwn ? `2px solid ${pmC}44` : 'none',
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          marginBottom: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: 30,
-                              height: 30,
-                              borderRadius: 15,
-                              background: `${pmC}22`,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: 17,
-                            }}
-                          >
-                            {pmE}
-                          </div>
-                          <p
-                            style={{
-                              fontWeight: 700,
-                              fontSize: 15,
-                              color: pmC,
-                              margin: 0,
-                            }}
-                          >
-                            {pm}
-                            {isOwn ? ' ✓' : ''}
-                          </p>
-                        </div>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            padding: '3px 9px',
-                            borderRadius: 99,
-                            background: `${pmC}15`,
-                            color: pmC,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {pmDone}/{pmTasks.length}
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          height: 5,
-                          borderRadius: 3,
-                          background: '#f0f0f5',
-                          marginBottom: 10,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: '100%',
-                            borderRadius: 3,
-                            background: pmC,
-                            width: `${
-                              pmTasks.length
-                                ? (pmDone / pmTasks.length) * 100
-                                : 0
-                            }%`,
-                            transition: 'width 0.3s',
-                          }}
-                        />
-                      </div>
-                      {pmTasks.map((task) => {
-                        const key = `${wk}|personal|${pm}|${task}`;
-                        const checked = !!done[key];
-                        return (
-                          <div
-                            key={task}
-                            onClick={() => isOwn && togglePersonal(pm, task)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 12,
-                              padding: '11px 0',
-                              borderBottom: '1px solid #f5f5f7',
-                              cursor: isOwn ? 'pointer' : 'default',
-                              opacity: !isOwn && !checked ? 0.5 : 1,
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: 26,
-                                height: 26,
-                                borderRadius: 13,
-                                border: checked
-                                  ? 'none'
-                                  : `2px solid ${isOwn ? pmC + '44' : '#ddd'}`,
-                                background: checked ? pmC : 'transparent',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0,
-                              }}
-                            >
-                              {checked && <Tick />}
-                            </div>
-                            <span
-                              style={{
-                                fontSize: 14,
-                                color: checked ? '#bbb' : '#1a1a2e',
-                                textDecoration: checked
-                                  ? 'line-through'
-                                  : 'none',
-                                flex: 1,
-                              }}
-                            >
-                              {task}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-
-              {KIDS.map((kid) => {
-                const kp = kidChallenge(kid);
-                const kC = pc(kid);
-                const kE = pe(kid);
-                const isOwn = kid === selectedMember;
-                return (
-                  <div
-                    key={kid}
-                    style={{
-                      background: kp.unlocked ? `${kC}15` : '#fff',
-                      border: kp.unlocked
-                        ? `2px solid ${kC}`
-                        : '1px solid #f0f0f5',
-                      borderRadius: 20,
-                      padding: '1rem',
-                      marginBottom: 14,
-                      boxShadow: '0 1px 8px #0000000a',
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        marginBottom: 8,
-                      }}
-                    >
-                      <span style={{ fontSize: 20 }}>
-                        {kp.unlocked ? '🏆' : '🎯'}
-                      </span>
-                      <div
-                        style={{
-                          width: 26,
-                          height: 26,
-                          borderRadius: 13,
-                          background: `${kC}22`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 14,
-                        }}
-                      >
-                        {kE}
-                      </div>
-                      <p
-                        style={{
-                          fontWeight: 700,
-                          fontSize: 14,
-                          color: kC,
-                          margin: 0,
-                        }}
-                      >
-                        Challenge {kid}
-                        {isOwn ? ' (moi)' : ''}
-                      </p>
-                      <span
-                        style={{
-                          marginLeft: 'auto',
-                          fontSize: 12,
-                          color: kp.unlocked ? kC : '#aaa',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {kp.pct}%
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        height: 8,
-                        borderRadius: 4,
-                        background: '#f0f0f5',
-                        marginBottom: 8,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: '100%',
-                          borderRadius: 4,
-                          background: kC,
-                          width: `${kp.pct}%`,
-                          transition: 'width 0.4s',
-                        }}
-                      />
-                    </div>
-                    <p
-                      style={{
-                        fontSize: 12,
-                        color: kp.unlocked ? kC : '#aaa',
-                        margin: '0 0 2px',
-                        fontWeight: kp.unlocked ? 700 : 400,
-                      }}
-                    >
-                      {kp.unlocked
-                        ? 'Débloqué !'
-                        : 'Récompense si toutes les tâches sont faites :'}
-                    </p>
-                    <p style={{ fontSize: 13, color: '#1a1a2e', margin: 0 }}>
-                      {rewards[kid] || 'Récompense à définir'}
-                    </p>
-                    {kp.unlocked && isOwn && !unlockedShown[kid] && (
-                      <button
-                        onClick={() => dismissUnlock(kid)}
-                        style={{
-                          marginTop: 8,
-                          background: kC,
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: 12,
-                          padding: '6px 16px',
-                          fontWeight: 700,
-                          fontSize: 13,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        OK !
-                      </button>
-                    )}
+                    <span style={{fontSize:14,color:cb?"#bbb":"#1a1a2e",textDecoration:cb?"line-through":"none",flex:1}}>{task}</span>
+                    {cb?<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${pc(cb)}22`,color:pc(cb),fontWeight:600}}>{cb}</span>:<span style={{fontSize:20}}>{pe(selectedMember)}</span>}
                   </div>
                 );
               })}
+            </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  marginBottom: 16,
-                }}
-              >
-                <button
-                  onClick={nextWeek}
-                  style={{
-                    background: color,
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 16,
-                    padding: '12px 22px',
-                    fontWeight: 700,
-                    fontSize: 14,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Semaine suivante →
+            {(()=>{
+              const counts=kidsCommonCount();
+              const mS=counts["Michel"]||0;const gS=counts["Gabrielle"]||0;const total=mS+gS||1;
+              const setter=whoSetsTableToday();
+              return(
+                <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
+                  <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:"0 0 10px"}}>⚔️ Michel vs Gabrielle</p>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <span style={{fontSize:13,fontWeight:700,color:pc("Michel"),minWidth:54}}>{pe("Michel")} {mS}</span>
+                    <div style={{flex:1,height:10,borderRadius:5,background:"#f0f0f5",overflow:"hidden",display:"flex"}}>
+                      <div style={{height:"100%",background:pc("Michel"),width:`${(mS/total)*100}%`,transition:"width 0.4s"}}/>
+                      <div style={{height:"100%",background:pc("Gabrielle"),width:`${(gS/total)*100}%`,transition:"width 0.4s"}}/>
+                    </div>
+                    <span style={{fontSize:13,fontWeight:700,color:pc("Gabrielle"),minWidth:54,textAlign:"right"}}>{gS} {pe("Gabrielle")}</span>
+                  </div>
+                  <p style={{fontSize:11,color:"#aaa",textAlign:"center",margin:"0 0 12px"}}>Tâches hebdomadaires · récompense au meilleur !</p>
+                  <div style={{borderTop:"1px solid #f5f5f7",paddingTop:10}}>
+                    <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>🍽️ Table aujourd'hui</p>
+                    {!getTableSetter()?<p style={{fontSize:12,color:"#aaa",margin:0}}>Le 1er enfant à mettre la table ce lundi définit le roulement.</p>:(
+                      <div style={{display:"flex",gap:8}}>
+                        {[{kid:"Michel",role:setter==="Michel"?"Mettre la table":"Débarrasser"},{kid:"Gabrielle",role:setter==="Gabrielle"?"Mettre la table":"Débarrasser"}].map(({kid,role})=>(
+                          <div key={kid} style={{flex:1,background:`${pc(kid)}12`,borderRadius:14,padding:"8px",textAlign:"center"}}>
+                            <div style={{fontSize:20}}>{pe(kid)}</div>
+                            <p style={{fontSize:12,fontWeight:700,color:pc(kid),margin:"3px 0 1px"}}>{kid}</p>
+                            <p style={{fontSize:11,color:"#888",margin:0}}>{role}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>Maman &amp; Papou</p>
+                <span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:"#f0f0f5",color:"#888",fontWeight:500}}>{coupleDone}/{COUPLE_POOL.length} semaine</span>
+              </div>
+              <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}>
+                <div style={{height:"100%",borderRadius:3,background:"#5DCAA5",width:`${COUPLE_POOL.length?(coupleDone/COUPLE_POOL.length)*100:0}%`,transition:"width 0.3s"}}/>
+              </div>
+              {COUPLE_POOL.map(task=>{
+                const key=`${wk}|couple|${task}`;const cb=done[key];
+                return(
+                  <div key={task} onClick={()=>claimCouple(task)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #f5f5f7",cursor:isCouple?"pointer":"default",opacity:!isCouple&&!cb?0.5:1}}>
+                    <div style={{width:26,height:26,borderRadius:13,border:cb?"none":`2px solid ${isCouple?color+"44":"#ddd"}`,background:cb?pc(cb):"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      {cb&&<Tick/>}
+                    </div>
+                    <span style={{fontSize:14,color:cb?"#bbb":"#1a1a2e",textDecoration:cb?"line-through":"none",flex:1}}>{task}</span>
+                    {cb?<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${pc(cb)}22`,color:pc(cb),fontWeight:600}}>{cb}</span>:!isCouple&&<span style={{fontSize:11,color:"#ccc"}}>Maman/Papou</span>}
+                  </div>
+                );
+              })}
+            </div>
+
+            {Object.keys(profiles).filter(m=>(PERSONAL_TASKS[m]||[]).length>0).map(pm=>{
+              const pmTasks=PERSONAL_TASKS[pm]||[];
+              const pmDone=pmTasks.filter(t=>done[`${wk}|personal|${pm}|${t}`]).length;
+              const pmC=pc(pm);const pmE=pe(pm);const isOwn=pm===selectedMember;
+              return(
+                <div key={pm} style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:isOwn?`2px solid ${pmC}44`:"none"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:30,height:30,borderRadius:15,background:`${pmC}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>{pmE}</div>
+                      <p style={{fontWeight:700,fontSize:15,color:pmC,margin:0}}>{pm}{isOwn?" ✓":""}</p>
+                    </div>
+                    <span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:`${pmC}15`,color:pmC,fontWeight:700}}>{pmDone}/{pmTasks.length}</span>
+                  </div>
+                  <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}>
+                    <div style={{height:"100%",borderRadius:3,background:pmC,width:`${pmTasks.length?(pmDone/pmTasks.length)*100:0}%`,transition:"width 0.3s"}}/>
+                  </div>
+                  {pmTasks.map(task=>{
+                    const key=`${wk}|personal|${pm}|${task}`;const checked=!!done[key];
+                    return(
+                      <div key={task} onClick={()=>isOwn&&togglePersonal(pm,task)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #f5f5f7",cursor:isOwn?"pointer":"default",opacity:!isOwn&&!checked?0.5:1}}>
+                        <div style={{width:26,height:26,borderRadius:13,border:checked?"none":`2px solid ${isOwn?pmC+"44":"#ddd"}`,background:checked?pmC:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                          {checked&&<Tick/>}
+                        </div>
+                        <span style={{fontSize:14,color:checked?"#bbb":"#1a1a2e",textDecoration:checked?"line-through":"none",flex:1}}>{task}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+
+            {KIDS.map(kid=>{
+              const kp=kidChallenge(kid);const kC=pc(kid);const kE=pe(kid);const isOwn=kid===selectedMember;
+              return(
+                <div key={kid} style={{background:kp.unlocked?`${kC}15`:"#fff",border:kp.unlocked?`2px solid ${kC}`:"1px solid #f0f0f5",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                    <span style={{fontSize:20}}>{kp.unlocked?"🏆":"🎯"}</span>
+                    <div style={{width:26,height:26,borderRadius:13,background:`${kC}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{kE}</div>
+                    <p style={{fontWeight:700,fontSize:14,color:kC,margin:0}}>Challenge {kid}{isOwn?" (moi)":""}</p>
+                    <span style={{marginLeft:"auto",fontSize:12,color:kp.unlocked?kC:"#aaa",fontWeight:700}}>{kp.pct}%</span>
+                  </div>
+                  <div style={{height:8,borderRadius:4,background:"#f0f0f5",marginBottom:8,overflow:"hidden"}}>
+                    <div style={{height:"100%",borderRadius:4,background:kC,width:`${kp.pct}%`,transition:"width 0.4s"}}/>
+                  </div>
+                  <p style={{fontSize:12,color:kp.unlocked?kC:"#aaa",margin:"0 0 2px",fontWeight:kp.unlocked?700:400}}>{kp.unlocked?"Débloqué !":"Récompense si toutes les tâches sont faites :"}</p>
+                  <p style={{fontSize:13,color:"#1a1a2e",margin:0}}>{rewards[kid]||"Récompense à définir"}</p>
+                  {kp.unlocked&&isOwn&&!unlockedShown[kid]&&<button onClick={()=>dismissUnlock(kid)} style={{marginTop:8,background:kC,color:"#fff",border:"none",borderRadius:12,padding:"6px 16px",fontWeight:700,fontSize:13,cursor:"pointer"}}>OK !</button>}
+                </div>
+              );
+            })}
+
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+              <button onClick={nextWeek} style={{background:color,color:"#fff",border:"none",borderRadius:16,padding:"12px 22px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Semaine suivante →</button>
+            </div>
+          </>
+        )}
+
+        {page==="scores"&&(
+          <div style={{background:"#fff",borderRadius:20,padding:"1rem",boxShadow:"0 1px 8px #0000000a"}}>
+            <p style={{fontWeight:700,fontSize:16,color:"#1a1a2e",margin:"0 0 16px"}}>Classement familial 🏅</p>
+            {Object.keys(profiles).sort((a,b)=>(points[b]||0)-(points[a]||0)).map((m,i)=>{
+              const c=pc(m);const e=pe(m);const pts=points[m]||0;
+              const max=Math.max(...Object.keys(profiles).map(x=>points[x]||0),1);
+              return(
+                <div key={m} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #f5f5f7"}}>
+                  <span style={{fontSize:18,fontWeight:700,width:26,color:"#ccc",textAlign:"center"}}>{i+1}</span>
+                  <div style={{width:40,height:40,borderRadius:20,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>{e}</div>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{fontSize:14,fontWeight:700,color:m===selectedMember?c:"#1a1a2e"}}>{m}{m===selectedMember?" (moi)":""}</span>
+                      <span style={{fontSize:13,fontWeight:700,color:c}}>{pts} pts</span>
+                    </div>
+                    <div style={{height:5,borderRadius:3,background:"#f0f0f5"}}>
+                      <div style={{height:"100%",borderRadius:3,background:c,width:`${(pts/max)*100}%`,transition:"width 0.4s"}}/>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {page==="history"&&(
+          <div>
+            <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+              {[["today","Aujourd'hui"],["yesterday","Hier"],["week","Semaine"],["all","Tout"]].map(([v,l])=>(
+                <button key={v} onClick={()=>setHistFilter(v)} style={{fontSize:13,padding:"7px 14px",borderRadius:99,border:"none",background:histFilter===v?color:"#fff",color:histFilter===v?"#fff":"#888",fontWeight:histFilter===v?700:400,cursor:"pointer",boxShadow:"0 1px 4px #0000000a"}}>
+                  {l}
                 </button>
-              </div>
-            </>
-          )}
-
-          {page === 'scores' && (
-            <div
-              style={{
-                background: '#fff',
-                borderRadius: 20,
-                padding: '1rem',
-                boxShadow: '0 1px 8px #0000000a',
-              }}
-            >
-              <p
-                style={{
-                  fontWeight: 700,
-                  fontSize: 16,
-                  color: '#1a1a2e',
-                  margin: '0 0 16px',
-                }}
-              >
-                Classement familial 🏅
-              </p>
-              {Object.keys(profiles)
-                .sort((a, b) => (points[b] || 0) - (points[a] || 0))
-                .map((m, i) => {
-                  const c = pc(m);
-                  const e = pe(m);
-                  const pts = points[m] || 0;
-                  const max = Math.max(
-                    ...Object.keys(profiles).map((x) => points[x] || 0),
-                    1
-                  );
-                  return (
-                    <div
-                      key={m}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: '11px 0',
-                        borderBottom: '1px solid #f5f5f7',
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 18,
-                          fontWeight: 700,
-                          width: 26,
-                          color: '#ccc',
-                          textAlign: 'center',
-                        }}
-                      >
-                        {i + 1}
-                      </span>
-                      <div
-                        style={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 20,
-                          background: `${c}22`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 22,
-                        }}
-                      >
-                        {e}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            marginBottom: 4,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 14,
-                              fontWeight: 700,
-                              color: m === selectedMember ? c : '#1a1a2e',
-                            }}
-                          >
-                            {m}
-                            {m === selectedMember ? ' (moi)' : ''}
-                          </span>
-                          <span
-                            style={{ fontSize: 13, fontWeight: 700, color: c }}
-                          >
-                            {pts} pts
-                          </span>
-                        </div>
-                        <div
-                          style={{
-                            height: 5,
-                            borderRadius: 3,
-                            background: '#f0f0f5',
-                          }}
-                        >
-                          <div
-                            style={{
-                              height: '100%',
-                              borderRadius: 3,
-                              background: c,
-                              width: `${(pts / max) * 100}%`,
-                              transition: 'width 0.4s',
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+              ))}
             </div>
-          )}
-
-          {page === 'history' && (
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 8,
-                  marginBottom: 12,
-                  flexWrap: 'wrap',
-                }}
-              >
-                {[
-                  ['today', "Aujourd'hui"],
-                  ['yesterday', 'Hier'],
-                  ['week', 'Semaine'],
-                  ['all', 'Tout'],
-                ].map(([v, l]) => (
-                  <button
-                    key={v}
-                    onClick={() => setHistFilter(v)}
-                    style={{
-                      fontSize: 13,
-                      padding: '7px 14px',
-                      borderRadius: 99,
-                      border: 'none',
-                      background: histFilter === v ? color : '#fff',
-                      color: histFilter === v ? '#fff' : '#888',
-                      fontWeight: histFilter === v ? 700 : 400,
-                      cursor: 'pointer',
-                      boxShadow: '0 1px 4px #0000000a',
-                    }}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
-              <div
-                style={{
-                  background: '#fff',
-                  borderRadius: 20,
-                  padding: '1rem',
-                  boxShadow: '0 1px 8px #0000000a',
-                }}
-              >
-                {filteredHist.length === 0 && (
-                  <p
-                    style={{
-                      fontSize: 14,
-                      color: '#aaa',
-                      textAlign: 'center',
-                      padding: '1rem 0',
-                    }}
-                  >
-                    Aucune tâche pour cette période.
-                  </p>
-                )}
-                {filteredHist.map((h, i) => {
-                  const c = pc(h.member);
-                  const e = pe(h.member);
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '10px 0',
-                        borderBottom: '1px solid #f5f5f7',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 17,
-                          background: `${c}22`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 18,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {e}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p
-                          style={{
-                            fontWeight: 700,
-                            fontSize: 13,
-                            color: c,
-                            margin: '0 0 1px',
-                          }}
-                        >
-                          {h.member}
-                        </p>
-                        <p
-                          style={{
-                            fontSize: 12,
-                            color: '#888',
-                            margin: 0,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {h.task}
-                        </p>
-                      </div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'flex-end',
-                          gap: 3,
-                        }}
-                      >
-                        <span style={typeBadgeStyle(h.type)}>{h.type}</span>
-                        <span style={{ fontSize: 11, color: '#bbb' }}>
-                          {h.date}
-                        </span>
-                      </div>
+            <div style={{background:"#fff",borderRadius:20,padding:"1rem",boxShadow:"0 1px 8px #0000000a"}}>
+              {filteredHist.length===0&&<p style={{fontSize:14,color:"#aaa",textAlign:"center",padding:"1rem 0"}}>Aucune tâche pour cette période.</p>}
+              {filteredHist.map((h,i)=>{
+                const c=pc(h.member);const e=pe(h.member);
+                return(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
+                    <div style={{width:34,height:34,borderRadius:17,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{e}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <p style={{fontWeight:700,fontSize:13,color:c,margin:"0 0 1px"}}>{h.member}</p>
+                      <p style={{fontSize:12,color:"#888",margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{h.task}</p>
                     </div>
-                  );
-                })}
-              </div>
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+                      <span style={typeBadgeStyle(h.type)}>{h.type}</span>
+                      <span style={{fontSize:11,color:"#bbb"}}>{h.date}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
+          </div>
+        )}
+
         </div>
       </div>
 
-      <div
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          display: 'flex',
-          justifyContent: 'center',
-        }}
-      >
-        <div
-          style={{
-            width: '100%',
-            maxWidth: 480,
-            background: '#fff',
-            borderTop: '1px solid #f0f0f5',
-            display: 'flex',
-            padding: '8px 0 20px',
-            boxShadow: '0 -4px 20px #0000000a',
-          }}
-        >
-          {[
-            ['tasks', '🏠', 'Tâches'],
-            ['scores', '🏅', 'Points'],
-            ['history', '📋', 'Historique'],
-          ].map(([p, ic, lb]) => (
-            <button
-              key={p}
-              onClick={() => setPage(p)}
-              style={{
-                flex: 1,
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 2,
-              }}
-            >
-              <span style={{ fontSize: 24 }}>{ic}</span>
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: page === p ? 700 : 400,
-                  color: page === p ? color : '#aaa',
-                }}
-              >
-                {lb}
-              </span>
+      <div style={{position:"fixed",bottom:0,left:0,right:0,display:"flex",justifyContent:"center"}}>
+        <div style={{width:"100%",maxWidth:480,background:"#fff",borderTop:"1px solid #f0f0f5",display:"flex",padding:"8px 0 20px",boxShadow:"0 -4px 20px #0000000a"}}>
+          {[["tasks","🏠","Tâches"],["scores","🏅","Points"],["history","📋","Historique"]].map(([p,ic,lb])=>(
+            <button key={p} onClick={()=>setPage(p)} style={{flex:1,background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+              <span style={{fontSize:24}}>{ic}</span>
+              <span style={{fontSize:11,fontWeight:page===p?700:400,color:page===p?color:"#aaa"}}>{lb}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {gageAlert && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.45)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 300,
-            padding: '1rem',
-          }}
-          onClick={() => setGageAlert(null)}
-        >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: 24,
-              padding: '1.75rem',
-              width: '100%',
-              maxWidth: 340,
-              textAlign: 'center',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 48, marginBottom: 8 }}>😬</div>
-            <h3
-              style={{
-                fontWeight: 700,
-                fontSize: 18,
-                color: '#1a1a2e',
-                margin: '0 0 8px',
-              }}
-            >
-              Gage pour Michel &amp; Gabrielle !
-            </h3>
-            <p style={{ fontSize: 14, color: '#888', margin: '0 0 6px' }}>
-              <strong style={{ color: pc(gageAlert.member) }}>
-                {gageAlert.member}
-              </strong>{' '}
-              a fait :
-            </p>
-            <p
-              style={{
-                fontSize: 14,
-                fontWeight: 700,
-                background: '#f5f5f7',
-                borderRadius: 12,
-                padding: '10px',
-                margin: '0 0 16px',
-              }}
-            >
-              "{gageAlert.task}"
-            </p>
-            <p style={{ fontSize: 13, color: '#aaa', margin: '0 0 20px' }}>
-              La famille décide ensemble du gage !
-            </p>
-            <button
-              onClick={() => setGageAlert(null)}
-              style={{
-                width: '100%',
-                background: '#1a1a2e',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 16,
-                padding: '14px',
-                fontWeight: 700,
-                fontSize: 15,
-                cursor: 'pointer',
-              }}
-            >
-              OK, on décide !
-            </button>
+      {/* Modal règles première connexion */}
+      {firstLogin&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:400,padding:"1rem"}}>
+          <div style={{background:"#fff",borderRadius:24,padding:"1.75rem",width:"100%",maxWidth:340,textAlign:"center"}}>
+            <div style={{fontSize:48,marginBottom:8}}>{RULES[rulesPage].emoji}</div>
+            <h3 style={{fontWeight:700,fontSize:18,color:"#1a1a2e",margin:"0 0 10px"}}>{RULES[rulesPage].title}</h3>
+            <p style={{fontSize:14,color:"#888",lineHeight:1.6,margin:"0 0 24px"}}>{RULES[rulesPage].desc}</p>
+            <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:20}}>
+              {RULES.map((_,i)=><div key={i} style={{width:8,height:8,borderRadius:4,background:i===rulesPage?pc(selectedMember):"#ddd",transition:"background 0.2s"}}/>)}
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              {rulesPage>0&&<button onClick={()=>setRulesPage(p=>p-1)} style={{flex:1,background:"#f5f5f7",color:"#1a1a2e",border:"none",borderRadius:16,padding:"13px",fontWeight:600,fontSize:14,cursor:"pointer"}}>← Retour</button>}
+              {rulesPage<RULES.length-1
+                ?<button onClick={()=>setRulesPage(p=>p+1)} style={{flex:1,background:pc(selectedMember),color:"#fff",border:"none",borderRadius:16,padding:"13px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Suivant →</button>
+                :<button onClick={dismissRules} style={{flex:1,background:pc(selectedMember),color:"#fff",border:"none",borderRadius:16,padding:"13px",fontWeight:700,fontSize:14,cursor:"pointer"}}>C'est parti ! 🚀</button>
+              }
+            </div>
           </div>
         </div>
       )}
 
-      {endWeekModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.45)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 300,
-            padding: '1rem',
-          }}
-        >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: 24,
-              padding: '1.5rem',
-              width: '100%',
-              maxWidth: 340,
-            }}
-          >
-            {(() => {
-              const counts = kidsCommonCount();
-              const mS = counts['Michel'] || 0;
-              const gS = counts['Gabrielle'] || 0;
-              const winner = mS > gS ? 'Michel' : gS > mS ? 'Gabrielle' : null;
-              return (
-                <div
-                  style={{
-                    textAlign: 'center',
-                    marginBottom: 16,
-                    paddingBottom: 16,
-                    borderBottom: '1px solid #f5f5f7',
-                  }}
-                >
-                  <p style={{ fontSize: 28, margin: '0 0 6px' }}>🏅</p>
-                  <p
-                    style={{
-                      fontWeight: 700,
-                      fontSize: 15,
-                      color: '#1a1a2e',
-                      margin: '0 0 8px',
-                    }}
-                  >
-                    Compétition tâches communes
-                  </p>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'center',
-                      gap: 20,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: pc('Michel'),
-                      }}
-                    >
-                      {pe('Michel')} Michel : {mS}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: pc('Gabrielle'),
-                      }}
-                    >
-                      Gabrielle : {gS} {pe('Gabrielle')}
-                    </span>
+      {gageAlert&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:"1rem"}} onClick={()=>setGageAlert(null)}>
+          <div style={{background:"#fff",borderRadius:24,padding:"1.75rem",width:"100%",maxWidth:340,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontSize:48,marginBottom:8}}>😬</div>
+            <h3 style={{fontWeight:700,fontSize:18,color:"#1a1a2e",margin:"0 0 8px"}}>Gage pour Michel &amp; Gabrielle !</h3>
+            <p style={{fontSize:14,color:"#888",margin:"0 0 6px"}}><strong style={{color:pc(gageAlert.member)}}>{gageAlert.member}</strong> a fait :</p>
+            <p style={{fontSize:14,fontWeight:700,background:"#f5f5f7",borderRadius:12,padding:"10px",margin:"0 0 16px"}}>"{gageAlert.task}"</p>
+            <p style={{fontSize:13,color:"#aaa",margin:"0 0 20px"}}>La famille décide ensemble du gage !</p>
+            <button onClick={()=>setGageAlert(null)} style={{width:"100%",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:16,padding:"14px",fontWeight:700,fontSize:15,cursor:"pointer"}}>OK, on décide !</button>
+          </div>
+        </div>
+      )}
+
+      {endWeekModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:"1rem"}}>
+          <div style={{background:"#fff",borderRadius:24,padding:"1.5rem",width:"100%",maxWidth:340}}>
+            {(()=>{
+              const counts=kidsCommonCount();
+              const mS=counts["Michel"]||0;const gS=counts["Gabrielle"]||0;
+              const winner=mS>gS?"Michel":gS>mS?"Gabrielle":null;
+              return(
+                <div style={{textAlign:"center",marginBottom:16,paddingBottom:16,borderBottom:"1px solid #f5f5f7"}}>
+                  <p style={{fontSize:28,margin:"0 0 6px"}}>🏅</p>
+                  <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:"0 0 8px"}}>Compétition tâches hebdomadaires</p>
+                  <div style={{display:"flex",justifyContent:"center",gap:20,marginBottom:8}}>
+                    <span style={{fontSize:13,fontWeight:700,color:pc("Michel")}}>{pe("Michel")} Michel : {mS}</span>
+                    <span style={{fontSize:13,fontWeight:700,color:pc("Gabrielle")}}>Gabrielle : {gS} {pe("Gabrielle")}</span>
                   </div>
-                  {winner ? (
-                    <p style={{ fontSize: 13, color: '#888', margin: 0 }}>
-                      🎉 <strong style={{ color: pc(winner) }}>{winner}</strong>{' '}
-                      gagne ! La famille décide de sa récompense.
-                    </p>
-                  ) : (
-                    <p style={{ fontSize: 13, color: '#888', margin: 0 }}>
-                      Égalité ! La famille décide ensemble.
-                    </p>
-                  )}
+                  {winner?<p style={{fontSize:13,color:"#888",margin:0}}>🎉 <strong style={{color:pc(winner)}}>{winner}</strong> gagne ! La famille décide de sa récompense.</p>
+                  :<p style={{fontSize:13,color:"#888",margin:0}}>Égalité ! La famille décide ensemble.</p>}
                 </div>
               );
             })()}
-            {lateMembers.length > 0 && (
+            {lateMembers.length>0&&(
               <>
-                <p
-                  style={{
-                    fontWeight: 700,
-                    fontSize: 15,
-                    color: '#1a1a2e',
-                    margin: '0 0 10px',
-                    textAlign: 'center',
-                  }}
-                >
-                  ⚠️ Tâches non terminées
-                </p>
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                    marginBottom: 14,
-                  }}
-                >
-                  {lateMembers.map((m) => (
-                    <div
-                      key={m}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        background: '#fff5f5',
-                        borderRadius: 14,
-                        padding: '10px 14px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 17,
-                          background: `${pc(m)}22`,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: 18,
-                        }}
-                      >
-                        {pe(m)}
-                      </div>
-                      <span
-                        style={{ fontWeight: 700, fontSize: 14, color: pc(m) }}
-                      >
-                        {m}
-                      </span>
-                      <span style={{ marginLeft: 'auto', fontSize: 20 }}>
-                        😅
-                      </span>
+                <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:"0 0 10px",textAlign:"center"}}>⚠️ Tâches non terminées</p>
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+                  {lateMembers.map(m=>(
+                    <div key={m} style={{display:"flex",alignItems:"center",gap:10,background:"#fff5f5",borderRadius:14,padding:"10px 14px"}}>
+                      <div style={{width:34,height:34,borderRadius:17,background:`${pc(m)}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{pe(m)}</div>
+                      <span style={{fontWeight:700,fontSize:14,color:pc(m)}}>{m}</span>
+                      <span style={{marginLeft:"auto",fontSize:20}}>😅</span>
                     </div>
                   ))}
                 </div>
-                <p
-                  style={{
-                    fontSize: 13,
-                    color: '#aaa',
-                    textAlign: 'center',
-                    margin: '0 0 14px',
-                  }}
-                >
-                  La famille décide d'un gage pour chacun !
-                </p>
+                <p style={{fontSize:13,color:"#aaa",textAlign:"center",margin:"0 0 14px"}}>La famille décide d'un gage pour chacun !</p>
               </>
             )}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                onClick={() => setEndWeekModal(false)}
-                style={{
-                  flex: 1,
-                  background: '#f5f5f7',
-                  color: '#1a1a2e',
-                  border: 'none',
-                  borderRadius: 16,
-                  padding: '13px',
-                  fontWeight: 600,
-                  fontSize: 14,
-                  cursor: 'pointer',
-                }}
-              >
-                Attendre
-              </button>
-              <button
-                onClick={doNextWeek}
-                style={{
-                  flex: 1,
-                  background: '#1a1a2e',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 16,
-                  padding: '13px',
-                  fontWeight: 700,
-                  fontSize: 14,
-                  cursor: 'pointer',
-                }}
-              >
-                Suivante →
-              </button>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setEndWeekModal(false)} style={{flex:1,background:"#f5f5f7",color:"#1a1a2e",border:"none",borderRadius:16,padding:"13px",fontWeight:600,fontSize:14,cursor:"pointer"}}>Attendre</button>
+              <button onClick={doNextWeek} style={{flex:1,background:"#1a1a2e",color:"#fff",border:"none",borderRadius:16,padding:"13px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Suivante →</button>
             </div>
           </div>
         </div>
       )}
 
-      {editingProfile && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.4)',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            zIndex: 200,
-          }}
-          onClick={() => setEditingProfile(false)}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: 480,
-              background: '#fff',
-              borderRadius: '24px 24px 0 0',
-              padding: '1.5rem 1.25rem 2.5rem',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              style={{
-                width: 40,
-                height: 4,
-                borderRadius: 2,
-                background: '#e0e0e0',
-                margin: '0 auto 1.25rem',
-              }}
-            />
-            <p
-              style={{
-                fontWeight: 700,
-                fontSize: 17,
-                color: '#1a1a2e',
-                margin: '0 0 1.25rem',
-              }}
-            >
-              Mon profil
-            </p>
-            <p
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: '#888',
-                margin: '0 0 8px',
-              }}
-            >
-              Mon emoji
-            </p>
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 8,
-                marginBottom: 16,
-              }}
-            >
-              {EMOJI_OPTIONS.map((em) => (
-                <button
-                  key={em}
-                  onClick={() => setEditEmoji(em)}
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 12,
-                    border:
-                      editEmoji === em
-                        ? `2.5px solid ${editColor}`
-                        : '1.5px solid #eee',
-                    background: editEmoji === em ? `${editColor}15` : '#fafafa',
-                    fontSize: 22,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {em}
-                </button>
+      {editingProfile&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}} onClick={()=>setEditingProfile(false)}>
+          <div style={{width:"100%",maxWidth:480,background:"#fff",borderRadius:"24px 24px 0 0",padding:"1.5rem 1.25rem 2.5rem"}} onClick={e=>e.stopPropagation()}>
+            <div style={{width:40,height:4,borderRadius:2,background:"#e0e0e0",margin:"0 auto 1.25rem"}}/>
+            <p style={{fontWeight:700,fontSize:17,color:"#1a1a2e",margin:"0 0 1.25rem"}}>Mon profil</p>
+            <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Mon emoji</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
+              {EMOJI_OPTIONS.map(em=>(
+                <button key={em} onClick={()=>setEditEmoji(em)} style={{width:44,height:44,borderRadius:12,border:editEmoji===em?`2.5px solid ${editColor}`:"1.5px solid #eee",background:editEmoji===em?`${editColor}15`:"#fafafa",fontSize:22,cursor:"pointer"}}>{em}</button>
               ))}
             </div>
-            <p
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: '#888',
-                margin: '0 0 8px',
-              }}
-            >
-              Ma couleur
-            </p>
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 8,
-                marginBottom: 16,
-              }}
-            >
-              {COLOR_OPTIONS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setEditColor(c)}
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 19,
-                    background: c,
-                    border:
-                      editColor === c
-                        ? '3px solid #1a1a2e'
-                        : '3px solid transparent',
-                    cursor: 'pointer',
-                  }}
-                />
+            <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Ma couleur</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
+              {COLOR_OPTIONS.map(c=>(
+                <button key={c} onClick={()=>setEditColor(c)} style={{width:38,height:38,borderRadius:19,background:c,border:editColor===c?"3px solid #1a1a2e":"3px solid transparent",cursor:"pointer"}}/>
               ))}
             </div>
-            <p
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color: '#888',
-                margin: '0 0 8px',
-              }}
-            >
-              Code PIN (4 chiffres)
-            </p>
-            <input
-              value={editPin}
-              onChange={(e) =>
-                setEditPin(e.target.value.replace(/\D/g, '').slice(0, 4))
-              }
-              maxLength={4}
-              placeholder="1234"
-              style={{
-                width: '100%',
-                fontSize: 20,
-                padding: '10px 14px',
-                borderRadius: 14,
-                border: '1.5px solid #eee',
-                marginBottom: 16,
-                boxSizing: 'border-box',
-                letterSpacing: 8,
-                textAlign: 'center',
-              }}
-            />
-            {KIDS.includes(selectedMember) && (
-              <>
-                <p
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: '#888',
-                    margin: '0 0 8px',
-                  }}
-                >
-                  Récompense challenge
-                </p>
-                <input
-                  value={editReward}
-                  onChange={(e) => setEditReward(e.target.value)}
-                  placeholder="Ex : Sortie cinéma, bonbons..."
-                  style={{
-                    width: '100%',
-                    fontSize: 14,
-                    padding: '10px 14px',
-                    borderRadius: 14,
-                    border: '1.5px solid #eee',
-                    marginBottom: 16,
-                    boxSizing: 'border-box',
-                  }}
-                />
-              </>
-            )}
-            <button
-              onClick={saveProfile}
-              style={{
-                width: '100%',
-                background: editColor,
-                color: '#fff',
-                border: 'none',
-                borderRadius: 16,
-                padding: '15px',
-                fontWeight: 700,
-                fontSize: 15,
-                cursor: 'pointer',
-              }}
-            >
-              Enregistrer
-            </button>
+            <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Code PIN (4 chiffres)</p>
+            <input value={editPin} onChange={e=>setEditPin(e.target.value.replace(/\D/g,"").slice(0,4))} maxLength={4} placeholder="0000" style={{width:"100%",fontSize:20,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box",letterSpacing:8,textAlign:"center"}}/>
+            {KIDS.includes(selectedMember)&&<>
+              <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Récompense challenge</p>
+              <input value={editReward} onChange={e=>setEditReward(e.target.value)} placeholder="Ex : Sortie cinéma, bonbons..." style={{width:"100%",fontSize:14,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box"}}/>
+            </>}
+            <button onClick={saveProfile} style={{width:"100%",background:editColor,color:"#fff",border:"none",borderRadius:16,padding:"15px",fontWeight:700,fontSize:15,cursor:"pointer"}}>Enregistrer</button>
           </div>
         </div>
       )}
