@@ -513,12 +513,16 @@ export default function App(){
                 <div style={{height:"100%",borderRadius:3,background:"#5DCAA5",width:`${COUPLE_POOL.length?(coupleDone/COUPLE_POOL.length)*100:0}%`,transition:"width 0.3s"}}/>
               </div>
               {COUPLE_POOL.map(task=>{
-                const key=`${wk}|couple|${task}`;const cb=done[key];
+                const key=`${wk}|couple|${task}`;
+                const timesThisWeek=history.filter(h=>h.task===task&&h.weekKey===wk&&h.type==="couple").length;
                 return(
-                  <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
-                    <div onClick={()=>claimCouple(task)} style={{width:26,height:26,borderRadius:13,border:cb?"none":`2px solid ${isCouple?color+"44":"#ddd"}`,background:cb?pc(cb):"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:isCouple?"pointer":"default"}}>{cb&&<Tick/>}</div>
-                    <span onClick={()=>claimCouple(task)} style={{fontSize:14,color:cb?"#bbb":"#1a1a2e",textDecoration:cb?"line-through":"none",flex:1,cursor:isCouple?"pointer":"default",opacity:!isCouple&&!cb?0.5:1}}>{task}</span>
-                    {cb?<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${pc(cb)}22`,color:pc(cb),fontWeight:600}}>{cb}</span>:!isCouple&&<span style={{fontSize:11,color:"#ccc"}}>Maman/Papou</span>}
+                  <div key={task} onClick={()=>claimCouple(task)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7",cursor:isCouple?"pointer":"default",opacity:!isCouple?0.5:1}}>
+                    <div style={{width:26,height:26,borderRadius:13,border:`2px solid ${isCouple?color+"44":"#ddd"}`,background:isCouple?`${color}22`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      {isCouple&&<svg width="10" height="10" viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="5" y1="2" x2="5" y2="8" stroke={color} strokeWidth="2" strokeLinecap="round"/></svg>}
+                    </div>
+                    <span style={{fontSize:14,color:"#1a1a2e",flex:1}}>{task}</span>
+                    {timesThisWeek>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:"#DCFCE7",color:"#16A34A",fontWeight:600}}>×{timesThisWeek}</span>}
+                    {!isCouple&&<span style={{fontSize:11,color:"#ccc"}}>Maman/Papou</span>}
                     <TaskPhotoButton taskKey={key}/>
                   </div>
                 );
