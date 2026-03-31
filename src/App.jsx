@@ -412,6 +412,7 @@ export default function App(){
         {page==="tasks"&&(
           <>
             {/* Tâches hebdomadaires */}
+            {/* Tâches hebdomadaires */}
             <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                 <p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:0}}>Tâches hebdomadaires Michel &amp; Gabrielle</p>
@@ -425,11 +426,11 @@ export default function App(){
                 const timesToday=history.filter(h=>h.task===task&&h.dayKey===today&&h.type==="commune").length;
                 const isDouble=DOUBLE_POINTS_TASKS.includes(task);
                 return(
-                  <div key={task} onClick={()=>claimShared(task)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7",cursor:"pointer"}}>
-                    <div style={{width:26,height:26,borderRadius:13,border:`2px solid ${color}44`,background:`${color}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
+                    <div onClick={()=>claimShared(task)} style={{width:26,height:26,borderRadius:13,border:`2px solid ${color}44`,background:`${color}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>
                       <svg width="10" height="10" viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="5" y1="2" x2="5" y2="8" stroke={color} strokeWidth="2" strokeLinecap="round"/></svg>
                     </div>
-                    <span style={{fontSize:14,color:"#1a1a2e",flex:1}}>{task}</span>
+                    <span onClick={()=>claimShared(task)} style={{fontSize:14,color:"#1a1a2e",flex:1,cursor:"pointer"}}>{task}</span>
                     {isDouble&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:99,background:"#FEF9C3",color:"#A16207",fontWeight:600}}>×2 pts</span>}
                     {timesToday>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${color}22`,color,fontWeight:600}}>×{timesToday}</span>}
                     <TaskPhotoButton taskKey={key}/>
