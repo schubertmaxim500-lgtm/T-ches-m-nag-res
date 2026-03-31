@@ -32,7 +32,8 @@ async function compressImage(file){
 async function uploadPhoto(file,key){
   const compressed=await compressImage(file);
   const safeName=key.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
-  const path=`${safeName}.jpg`;
+  const timestamp=Date.now();
+  const path=`${safeName}_${timestamp}.jpg`;
   const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"image/jpeg","x-upsert":"true"},body:compressed});
   if(!res.ok){console.error("Upload failed",await res.text());return null;}
   return `${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`;
@@ -122,7 +123,16 @@ export default function App(){
 
   function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},msUntilMidnight()+500);}
 
-  
+  useEffect(()=>{
+    const script=document.createElement("script");
+    script.src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
+    script.defer=true;
+    document.head.appendChild(script);
+    window.OneSignalDeferred=window.OneSignalDeferred||[];
+    window.OneSignalDeferred.push(async(OneSignal)=>{
+      await OneSignal.init({appId:ONESIGNAL_APP_ID,notifyButton:{enable:false},allowLocalhostAsSecureOrigin:true});
+    });
+  },[]);
 
   async function loadFromDB(){
     try{
