@@ -139,11 +139,16 @@ export default function App(){
       const d=await dbGet();
       if(d){
         if(d.profiles&&Object.keys(d.profiles).length>0)setProfiles(d.profiles);
-        setDone(d.done||{});setHistory(d.history||[]);setPoints(d.points||{});
+        setDone(d.done||{});
+        setHistory(d.history||[]);
+        setPoints(d.points||{});
         if(d.rewards&&Object.keys(d.rewards).length>0)setRewards(d.rewards);
-        setTableRota(d.table_rota||{});setInitiative(d.initiative||null);
-        setMessages(d.messages||[]);setUnlockedShown(d.unlocked||{});
+        setTableRota(d.table_rota||{});
+        setInitiative(d.initiative||null);
+        setMessages(d.messages||[]);
+        setUnlockedShown(d.unlocked||{});
         setPhotos(d.photos||{});
+        console.log("Photos loaded:", d.photos);
       }
     }catch(e){console.error(e);}
     setLoading(false);
