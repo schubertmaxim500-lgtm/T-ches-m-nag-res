@@ -14,8 +14,10 @@ async function dbSet(patch){
 }
 async function uploadPhoto(file,key){
   const ext=file.name.split('.').pop();
-  const path=`${key.replace(/[|]/g,'_')}.${ext}`;
-  await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":file.type,"x-upsert":"true"},body:file});
+  const safeName=key.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
+  const path=`${safeName}.${ext}`;
+  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":file.type,"x-upsert":"true"},body:file});
+  if(!res.ok){console.error("Upload failed",await res.text());return null;}
   return `${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`;
 }
 async function sendPushNotification(title,message){
