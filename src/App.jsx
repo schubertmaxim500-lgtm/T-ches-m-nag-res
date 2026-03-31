@@ -205,6 +205,8 @@ export default function App(){
         const np={...photos,[taskKey]:url};
         setPhotos(np);
         await dbSet({photos:np});
+        // Force reload pour synchroniser
+        await loadFromDB();
       }
     }catch(err){console.error(err);}
     setUploadingKey(null);
