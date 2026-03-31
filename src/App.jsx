@@ -24,6 +24,7 @@ async function sendPushNotification(title,message){
   }catch(e){console.error("Notif error",e);}
 }
 
+const DOUBLE_POINTS_TASKS=["Enlever les crottes de Tabby"];
 const SHARED_DAILY=["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
 const COUPLE_POOL=["Passer l'aspirateur","Passer le mop","Faire une machine à laver","Etendre le linge","Plier le linge"];
 const PERSONAL_TASKS={
@@ -33,7 +34,7 @@ const PERSONAL_TASKS={
 };
 const KIDS=["Michel","Gabrielle"];
 const COUPLE=["Maman","Papou"];
-const INITIATIVE_TASKS=["Passer l'aspirateur","Plier le linge","Ranger une pièce"];
+const INITIATIVE_TASKS=["Passer l'aspirateur","Plier le linge","Ranger une pièce","Autre (décrire)"];
 const ROOMS=["Salon","Cuisine","Toilette du bas","Toilette du haut","Balcon"];
 const DEFAULT_PROFILES={Maman:{color:"#e879a0",emoji:"👩",pin:"0000"},Papou:{color:"#7C6AF7",emoji:"👨",pin:"0000"},Michel:{color:"#F97316",emoji:"🧒",pin:"0000"},Gabrielle:{color:"#06B6D4",emoji:"👧",pin:"0000"}};
 const DEFAULT_REWARDS={Michel:"🍬 Bonbons au choix",Gabrielle:"🍰 Gâteau au choix"};
@@ -88,6 +89,7 @@ export default function App(){
   const [showInitiativeForm,setShowInitiativeForm]=useState(false);
   const [initTask,setInitTask]=useState(INITIATIVE_TASKS[0]);
   const [initRoom,setInitRoom]=useState(ROOMS[0]);
+  const [initCustom,setInitCustom]=useState("");
   const [messages,setMessages]=useState([]);
   const [newMsg,setNewMsg]=useState("");
   const [loading,setLoading]=useState(true);
@@ -188,9 +190,11 @@ export default function App(){
   function TaskPhotoButton({taskKey}){
     const photoUrl=photos[taskKey];
     return(
-      <div style={{display:"flex",alignItems:"center",gap:6}}>
-        {photoUrl&&<button onClick={()=>setPhotoViewer(photoUrl)} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>📸</button>}
-        <label style={{width:28,height:28,borderRadius:8,background:uploadingKey===taskKey?"#f0f0f5":"#f0f0f5",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:4}}>
+        {photoUrl&&(
+          <button onClick={e=>{e.stopPropagation();setPhotoViewer(photoUrl);}} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>📸</button>
+        )}
+        <label onClick={e=>e.stopPropagation()} style={{width:28,height:28,borderRadius:8,background:"#f0f0f5",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}>
           {uploadingKey===taskKey?"⏳":"📷"}
           <input type="file" accept="image/*" capture="environment" onChange={e=>handlePhotoUpload(e,taskKey)} style={{display:"none"}}/>
         </label>
@@ -199,26 +203,19 @@ export default function App(){
   }
 
   function claimShared(task){
-    const key=`${today}|shared|${task}`;
     const setter=whoSetsTableToday();const clearer=whoClearsTableToday();
     if(task==="Mettre la table"&&setter&&selectedMember!==setter){alert(`C'est ${setter} qui met la table aujourd'hui !`);return;}
     if(task==="Débarrasser la table"&&clearer&&selectedMember!==clearer){alert(`C'est ${clearer} qui débarrasse aujourd'hui !`);return;}
-    let nd,np,nh;
-    if(done[key]){
-      const member=done[key];nd={...done};delete nd[key];
-      np={...points,[member]:Math.max(0,(points[member]||0)-1)};
-      nh=history.filter(h=>!(h.task===task&&h.dayKey===today&&h.type==="commune"));
-    }else{
-      const member=selectedMember;
-      if(task==="Mettre la table"&&KIDS.includes(member)&&new Date().getDay()===1&&!tableRota[wk]){
-        const nr={...tableRota,[wk]:member};setTableRota(nr);dbSet({table_rota:nr});
-      }
-      nd={...done,[key]:member};np={...points,[member]:(points[member]||0)+1};
-      nh=addHistory({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"commune"});
-      if(COUPLE.includes(member))setGageAlert({member,task});
-      sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,task);
+    const member=selectedMember;
+    const pts=DOUBLE_POINTS_TASKS.includes(task)?2:1;
+    if(task==="Mettre la table"&&KIDS.includes(member)&&new Date().getDay()===1&&!tableRota[wk]){
+      const nr={...tableRota,[wk]:member};setTableRota(nr);dbSet({table_rota:nr});
     }
-    setDone(nd);setPoints(np);setHistory(nh);dbSet({done:nd,points:np,history:nh});
+    const np={...points,[member]:(points[member]||0)+pts};
+    const nh=addHistory({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"commune",pts});
+    setPoints(np);setHistory(nh);dbSet({points:np,history:nh});
+    if(COUPLE.includes(member))setGageAlert({member,task});
+    sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,`${task}${pts===2?" (+2 pts)":""}`);
   }
 
   function claimCouple(task){
@@ -245,7 +242,10 @@ export default function App(){
   }
 
   function postInitiative(){
-    const label=initTask==="Ranger une pièce"?`Ranger une pièce : ${initRoom}`:initTask;
+    let label;
+    if(initTask==="Ranger une pièce") label=`Ranger une pièce : ${initRoom}`;
+    else if(initTask==="Autre (décrire)") label=initCustom.trim()||"Tâche personnalisée";
+    else label=initTask;
     const ni={task:label,postedBy:selectedMember,postedAt:new Date().toLocaleDateString("fr-FR"),acceptedBy:null,done:false};
     setInitiative(ni);dbSet({initiative:ni});setShowInitiativeForm(false);
     sendPushNotification("⭐ Nouvelle initiative !",`${selectedMember} a posté : ${label} (+2 pts)`);
@@ -419,12 +419,17 @@ export default function App(){
                 <div style={{height:"100%",borderRadius:3,background:color,width:`${SHARED_DAILY.length?(sharedDone/SHARED_DAILY.length)*100:0}%`,transition:"width 0.3s"}}/>
               </div>
               {SHARED_DAILY.map(task=>{
-                const key=`${today}|shared|${task}`;const cb=done[key];
+                const key=`${today}|shared|${task}`;
+                const timesToday=history.filter(h=>h.task===task&&h.dayKey===today&&h.type==="commune").length;
+                const isDouble=DOUBLE_POINTS_TASKS.includes(task);
                 return(
-                  <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
-                    <div onClick={()=>claimShared(task)} style={{width:26,height:26,borderRadius:13,border:cb?"none":`2px solid ${color}44`,background:cb?pc(cb):"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>{cb&&<Tick/>}</div>
-                    <span onClick={()=>claimShared(task)} style={{fontSize:14,color:cb?"#bbb":"#1a1a2e",textDecoration:cb?"line-through":"none",flex:1,cursor:"pointer"}}>{task}</span>
-                    {cb?<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${pc(cb)}22`,color:pc(cb),fontWeight:600}}>{cb}</span>:null}
+                  <div key={task} onClick={()=>claimShared(task)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7",cursor:"pointer"}}>
+                    <div style={{width:26,height:26,borderRadius:13,border:`2px solid ${color}44`,background:`${color}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <svg width="10" height="10" viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="5" y1="2" x2="5" y2="8" stroke={color} strokeWidth="2" strokeLinecap="round"/></svg>
+                    </div>
+                    <span style={{fontSize:14,color:"#1a1a2e",flex:1}}>{task}</span>
+                    {isDouble&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:99,background:"#FEF9C3",color:"#A16207",fontWeight:600}}>×2 pts</span>}
+                    {timesToday>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${color}22`,color,fontWeight:600}}>×{timesToday}</span>}
                     <TaskPhotoButton taskKey={key}/>
                   </div>
                 );
@@ -470,10 +475,10 @@ export default function App(){
             <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:"1.5px solid #FEF9C3"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                 <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>⭐ Initiative <span style={{fontSize:12,color:"#A16207",fontWeight:600,marginLeft:6}}>+2 pts</span></p>
-                {isCouple&&!initiative&&<button onClick={()=>setShowInitiativeForm(true)} style={{fontSize:12,padding:"6px 14px",borderRadius:99,background:"#FEF9C3",color:"#A16207",border:"none",fontWeight:700,cursor:"pointer"}}>+ Poster</button>}
+                {!initiative&&<button onClick={()=>setShowInitiativeForm(true)} style={{fontSize:12,padding:"6px 14px",borderRadius:99,background:"#FEF9C3",color:"#A16207",border:"none",fontWeight:700,cursor:"pointer"}}>+ Poster</button>}
               </div>
               {!initiative&&!showInitiativeForm&&<p style={{fontSize:13,color:"#aaa",margin:0}}>Aucune initiative en cours.</p>}
-              {showInitiativeForm&&isCouple&&(
+              {showInitiativeForm&&(
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
                   <select value={initTask} onChange={e=>setInitTask(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>
                     {INITIATIVE_TASKS.map(t=><option key={t}>{t}</option>)}
@@ -482,6 +487,9 @@ export default function App(){
                     <select value={initRoom} onChange={e=>setInitRoom(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>
                       {ROOMS.map(r=><option key={r}>{r}</option>)}
                     </select>
+                  )}
+                  {initTask==="Autre (décrire)"&&(
+                    <input value={initCustom} onChange={e=>setInitCustom(e.target.value)} placeholder="Décris la tâche réalisée..." style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa",fontFamily:"inherit"}}/>
                   )}
                   <div style={{display:"flex",gap:8}}>
                     <button onClick={()=>setShowInitiativeForm(false)} style={{flex:1,background:"#f5f5f7",border:"none",borderRadius:12,padding:"10px",fontWeight:600,fontSize:13,cursor:"pointer"}}>Annuler</button>
