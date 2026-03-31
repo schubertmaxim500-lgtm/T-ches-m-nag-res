@@ -5,6 +5,7 @@ const SUPABASE_KEY = "sb_publishable_Re31HJlpQz46zZxTc6l_VA_IxTCCfoa";
 const ONESIGNAL_APP_ID = "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631";
 const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_API_KEY;
 
+// ── DB ──────────────────────────────────────────────────────
 async function dbGet(){
   const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
   const d=await r.json();return d[0]||null;
@@ -12,14 +13,15 @@ async function dbGet(){
 async function dbSet(patch){
   await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
 }
+
+// ── PHOTOS ──────────────────────────────────────────────────
 async function compressImage(file){
-  return new Promise((resolve)=>{
+  return new Promise(resolve=>{
     const img=new Image();
     const url=URL.createObjectURL(file);
     img.onload=()=>{
       const canvas=document.createElement("canvas");
-      const max=1024;
-      let w=img.width,h=img.height;
+      const max=1024;let w=img.width,h=img.height;
       if(w>h){if(w>max){h=h*(max/w);w=max;}}else{if(h>max){w=w*(max/h);h=max;}}
       canvas.width=w;canvas.height=h;
       canvas.getContext("2d").drawImage(img,0,0,w,h);
@@ -29,29 +31,48 @@ async function compressImage(file){
     img.src=url;
   });
 }
-async function uploadPhoto(file,key){
-  const compressed=await compressImage(file);
-  const safeName=key.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
-  const path=`${safeName}_${Date.now()}.jpg`;
-  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"image/jpeg"},body:compressed});
-  if(!res.ok){console.error("Upload failed",await res.text());return null;}
-  const url=`${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`;
-  return {url,path};
+
+// Upload : retourne {url, path} ou null
+async function photoUpload(file,taskKey){
+  try{
+    const compressed=await compressImage(file);
+    const safe=taskKey.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
+    const path=`${safe}_${Date.now()}.jpg`;
+    const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{
+      method:"POST",
+      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"image/jpeg"},
+      body:compressed
+    });
+    if(!res.ok){console.error("upload failed",await res.text());return null;}
+    return{url:`${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`,path};
+  }catch(e){console.error(e);return null;}
 }
+
+// Delete : supprime le fichier Storage
+async function photoDelete(path){
+  try{
+    await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{
+      method:"DELETE",
+      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}
+    });
+  }catch(e){console.error(e);}
+}
+
+// ── NOTIFICATIONS ────────────────────────────────────────────
 async function sendPushNotification(title,message){
   try{
     await fetch("https://onesignal.com/api/v1/notifications",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Key ${ONESIGNAL_API_KEY}`},body:JSON.stringify({app_id:ONESIGNAL_APP_ID,included_segments:["All"],headings:{fr:title,en:title},contents:{fr:message,en:message},url:"https://levasseur-schubert-family-chores.vercel.app"})});
-  }catch(e){console.error("Notif error",e);}
+  }catch(e){console.error(e);}
 }
 
+// ── CONSTANTS ────────────────────────────────────────────────
 const DOUBLE_POINTS_TASKS=["Enlever les crottes de Tabby"];
 const SHARED_DAILY=["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
 const COUPLE_POOL=["Passer l'aspirateur","Passer le mop","Faire une machine à laver","Etendre le linge","Plier le linge"];
 const PERSONAL_TASKS={
   Michel:["Ranger sa chambre","Passer l'aspirateur dans sa chambre","Passer le mop dans sa chambre","Ranger ses vêtements","Ramasser ses affaires et les ranger dans sa chambre","Nettoyer sa salle de bain"],
   Gabrielle:["Ranger sa chambre","Passer l'aspirateur dans sa chambre","Passer le mop dans sa chambre","Ranger ses vêtements","Ramasser ses affaires et les ranger dans sa chambre","Nettoyer sa salle de bain"],
-  Maman:["Ranger ses vêtements"],
-  Papou:["Ranger ses vêtements"],
+  Maman:["Ranger ses vêtements"],Papou:["Ranger ses vêtements"],
 };
 const KIDS=["Michel","Gabrielle"];
 const COUPLE=["Maman","Papou"];
@@ -65,13 +86,13 @@ const RULES=[
   {emoji:"🏠",title:"Tâches hebdomadaires Michel & Gabrielle",desc:"Remplir/vider le lave-vaisselle, sortir les poubelles, mettre/débarrasser la table, s'occuper de Tabby. Tout le monde peut les faire !"},
   {emoji:"👫",title:"Tâches Maman & Papou",desc:"Aspirateur, mop, machine à laver, linge… Ces tâches sont réservées à Maman et Papou."},
   {emoji:"🛏️",title:"Tâches personnelles",desc:"Chaque membre a ses propres tâches (chambre, vêtements…). Chacun coche les siennes."},
-  {emoji:"⭐",title:"Initiatives",desc:"Tout le monde peut poster une tâche bonus. Réalise-la pour gagner 2 points !"},
+  {emoji:"⭐",title:"Initiatives",desc:"Tout le monde peut poster une tâche bonus et la réaliser pour gagner 2 points !"},
   {emoji:"🏆",title:"Challenges Michel & Gabrielle",desc:"Terminez toutes vos tâches perso dans la semaine pour débloquer votre récompense !"},
   {emoji:"⚔️",title:"Compétition",desc:"Celui qui fait le plus de tâches hebdomadaires dans la semaine gagne une récompense !"},
-  {emoji:"📸",title:"Photos de preuves",desc:"Pour chaque tâche, tu peux ajouter une photo pour prouver que c'est fait ! Visible par toute la famille."},
-  {emoji:"💬",title:"Messagerie",desc:"Envoyez des messages à toute la famille depuis l'onglet Messages. Visible par tous !"},
-  {emoji:"✏️",title:"Mon profil",desc:"Appuie sur le bouton ✏️ en haut à droite pour personnaliser ton emoji, ta couleur et changer ton code PIN quand tu veux !"},
-  {emoji:"😬",title:"Gages",desc:"Si Maman ou Papou fait une tâche hebdomadaire à votre place, Michel et Gabrielle ont un gage. En fin de semaine, les retardataires aussi !"},
+  {emoji:"📸",title:"Photos de preuves",desc:"Pour chaque tâche, tu peux ajouter une photo. Tu peux aussi la supprimer et en reprendre une nouvelle !"},
+  {emoji:"💬",title:"Messagerie",desc:"Envoyez des messages à toute la famille depuis l'onglet Messages."},
+  {emoji:"✏️",title:"Mon profil",desc:"Appuie sur ✏️ en haut à droite pour changer ton emoji, ta couleur et ton PIN."},
+  {emoji:"😬",title:"Gages",desc:"Si Maman ou Papou fait une tâche hebdomadaire à votre place, Michel et Gabrielle ont un gage !"},
 ];
 
 function dayKey(d=new Date()){return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;}
@@ -87,6 +108,7 @@ export default function App(){
   const [history,setHistory]=useState([]);
   const [points,setPoints]=useState({});
   const [rewards,setRewards]=useState(DEFAULT_REWARDS);
+  // photos = { taskKey: {url, path} }
   const [photos,setPhotos]=useState({});
   const [today,setToday]=useState(dayKey());
   const [unlockedShown,setUnlockedShown]=useState({});
@@ -115,7 +137,7 @@ export default function App(){
   const [messages,setMessages]=useState([]);
   const [newMsg,setNewMsg]=useState("");
   const [loading,setLoading]=useState(true);
-  const [photoViewer,setPhotoViewer]=useState(null);
+  const [photoViewer,setPhotoViewer]=useState(null); // {url, path, taskKey}
   const [uploadingKey,setUploadingKey]=useState(null);
   const msgEnd=useRef(null);
   const timer=useRef(null);
@@ -123,16 +145,21 @@ export default function App(){
 
   function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},msUntilMidnight()+500);}
 
-  useEffect(()=>{
-    const script=document.createElement("script");
-    script.src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
-    script.defer=true;
-    document.head.appendChild(script);
-    window.OneSignalDeferred=window.OneSignalDeferred||[];
-    window.OneSignalDeferred.push(async(OneSignal)=>{
-      await OneSignal.init({appId:ONESIGNAL_APP_ID,notifyButton:{enable:false},allowLocalhostAsSecureOrigin:true});
+  // Normalise les photos depuis DB (ancien format string ou nouveau {url,path})
+  function normalizePhotos(raw){
+    if(!raw)return{};
+    const out={};
+    Object.entries(raw).forEach(([k,v])=>{
+      if(typeof v==="string"){
+        // ancien format : juste une URL, on reconstitue le path depuis l'URL
+        const path=v.split('/task-photos/')[1]||"";
+        out[k]={url:v,path};
+      }else if(v&&v.url){
+        out[k]=v;
+      }
     });
-  },[]);
+    return out;
+  }
 
   async function loadFromDB(){
     try{
@@ -147,7 +174,7 @@ export default function App(){
         setInitiative(d.initiative||null);
         setMessages(d.messages||[]);
         setUnlockedShown(d.unlocked||{});
-        setPhotos(d.photos||{});
+        setPhotos(normalizePhotos(d.photos));
       }
     }catch(e){console.error(e);}
     setLoading(false);
@@ -160,7 +187,7 @@ export default function App(){
     const lastWelcome=localStorage.getItem("fc_welcome_day");
     if(lastWelcome!==dayKey()){
       localStorage.setItem("fc_welcome_day",dayKey());
-      setTimeout(()=>sendPushNotification("🏠 FamilyChores","Les challenges commencent aujourd'hui ! Bonne chance à toute la famille 💪"),3000);
+      setTimeout(()=>sendPushNotification("🏠 FamilyChores","Les challenges commencent aujourd'hui ! Bonne chance 💪"),3000);
     }
     return()=>{clearTimeout(timer.current);clearInterval(pollTimer.current);}
   },[]);
@@ -176,7 +203,7 @@ export default function App(){
 
   function pc(m){return(profiles[m]||DEFAULT_PROFILES[m]||{color:"#888"}).color;}
   function pe(m){return(profiles[m]||DEFAULT_PROFILES[m]||{emoji:"👤"}).emoji;}
-  function addHistory(entry){return[entry,...history].slice(0,300);}
+  function addHist(entry){return[entry,...history].slice(0,300);}
   function selectMember(m){setSelectedMember(m);setPin("");setPinError(false);setScreen("pin");}
   function logout(){setScreen("home");setSelectedMember(null);setPin("");}
   function dismissRules(){
@@ -185,70 +212,64 @@ export default function App(){
     setFirstLogin(false);setRulesPage(0);
   }
 
+  // ── PHOTO HANDLERS ──
+  async function handlePhotoUpload(e,taskKey){
+    const file=e.target.files[0];if(!file)return;
+    setUploadingKey(taskKey);
+    const result=await photoUpload(file,taskKey);
+    if(result){
+      // Met à jour localement ET en DB
+      const np={...photos,[taskKey]:result};
+      setPhotos(np);
+      // Sauvegarde en DB (sérialise correctement)
+      const dbPhotos={};
+      Object.entries(np).forEach(([k,v])=>{dbPhotos[k]=v;});
+      await dbSet({photos:dbPhotos});
+    }
+    setUploadingKey(null);
+  }
+
+  async function handlePhotoDelete(taskKey,path){
+    // 1. Supprime le fichier Storage
+    await photoDelete(path);
+    // 2. Met à jour localement
+    const np={...photos};
+    delete np[taskKey];
+    setPhotos(np);
+    // 3. Met à jour en DB
+    const dbPhotos={};
+    Object.entries(np).forEach(([k,v])=>{dbPhotos[k]=v;});
+    await dbSet({photos:dbPhotos});
+    // 4. Ferme le viewer
+    setPhotoViewer(null);
+  }
+
+  // Composant bouton photo
+  function PhotoBtn({taskKey}){
+    const p=photos[taskKey];
+    return(
+      <div style={{display:"flex",alignItems:"center",gap:4}} onClick={e=>e.stopPropagation()}>
+        {p&&<button onClick={()=>setPhotoViewer({url:p.url,path:p.path,taskKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>📸</button>}
+        <label style={{width:28,height:28,borderRadius:8,background:"#f0f0f5",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}>
+          {uploadingKey===taskKey?"⏳":"📷"}
+          <input type="file" accept="image/*" capture="environment" onChange={e=>handlePhotoUpload(e,taskKey)} style={{display:"none"}}/>
+        </label>
+      </div>
+    );
+  }
+
   const wk=weekKey();
   function getTableSetter(){return tableRota[wk]||null;}
   function whoSetsTableToday(){
-    const setter=getTableSetter();if(!setter)return null;
-    const d=new Date().getDay();const daysFromMon=(d===0?6:d-1);
-    return["Michel","Gabrielle"][(["Michel","Gabrielle"].indexOf(setter)+daysFromMon)%2];
+    const s=getTableSetter();if(!s)return null;
+    const d=new Date().getDay();const dm=(d===0?6:d-1);
+    return["Michel","Gabrielle"][(["Michel","Gabrielle"].indexOf(s)+dm)%2];
   }
   function whoClearsTableToday(){const s=whoSetsTableToday();return s?(s==="Michel"?"Gabrielle":"Michel"):null;}
   function kidsCommonCount(){
     const c={Michel:0,Gabrielle:0};
     history.filter(h=>h.weekKey===wk&&h.type==="commune"&&KIDS.includes(h.member)).forEach(h=>{c[h.member]=(c[h.member]||0)+1;});
     return c;
-  }
-
-  async function handlePhotoUpload(e,taskKey){
-    const file=e.target.files[0];if(!file)return;
-    setUploadingKey(taskKey);
-    try{
-      const result=await uploadPhoto(file,taskKey);
-      if(result){
-        // Stocke url ET path pour pouvoir supprimer correctement
-        const np={...photos,[taskKey]:{url:result.url,path:result.path}};
-        setPhotos(np);
-        await dbSet({photos:np});
-      }
-    }catch(err){console.error(err);}
-    setUploadingKey(null);
-  }
-
-  async function deletePhoto(taskKey){
-    try{
-      const photoData=photos[taskKey];
-      if(photoData){
-        const path=typeof photoData==="string"?photoData.split('/').pop():photoData.path;
-        await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"DELETE",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
-      }
-      const np={...photos};
-      delete np[taskKey];
-      setPhotos(np);
-      await dbSet({photos:np});
-    }catch(e){console.error(e);}
-    setPhotoViewer(null);
-  }
-
-  function getPhotoUrl(taskKey){
-    const p=photos[taskKey];
-    if(!p)return null;
-    if(typeof p==="string")return p;
-    return p.url;
-  }
-
-  function TaskPhotoButton({taskKey}){
-    const photoUrl=getPhotoUrl(taskKey);
-    return(
-      <div style={{display:"flex",alignItems:"center",gap:4}}>
-        {photoUrl&&(
-          <button onClick={e=>{e.stopPropagation();setPhotoViewer({url:photoUrl,taskKey});}} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>📸</button>
-        )}
-        <label onClick={e=>e.stopPropagation()} style={{width:28,height:28,borderRadius:8,background:"#f0f0f5",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}>
-          {uploadingKey===taskKey?"⏳":"📷"}
-          <input type="file" accept="image/*" capture="environment" onChange={e=>handlePhotoUpload(e,taskKey)} style={{display:"none"}}/>
-        </label>
-      </div>
-    );
   }
 
   function claimShared(task){
@@ -261,66 +282,50 @@ export default function App(){
       const nr={...tableRota,[wk]:member};setTableRota(nr);dbSet({table_rota:nr});
     }
     const np={...points,[member]:(points[member]||0)+pts};
-    const nh=addHistory({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"commune",pts});
+    const nh=addHist({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"commune",pts});
     setPoints(np);setHistory(nh);dbSet({points:np,history:nh});
     if(COUPLE.includes(member))setGageAlert({member,task});
     sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,`${task}${pts===2?" (+2 pts)":""}`);
   }
-
   function claimCouple(task){
     if(!COUPLE.includes(selectedMember))return;
     const member=selectedMember;
     const np={...points,[member]:(points[member]||0)+1};
-    const nh=addHistory({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"couple"});
+    const nh=addHist({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"couple"});
     setPoints(np);setHistory(nh);dbSet({points:np,history:nh});
     sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,task);
   }
-
   function togglePersonal(pm,task){
     const key=`${wk}|personal|${pm}|${task}`;
     let nd={...done},np={...points},nh;
-    if(nd[key]){
-      delete nd[key];np[pm]=Math.max(0,(np[pm]||0)-1);
-      nh=history.filter(h=>!(h.task===task&&h.member===pm&&h.weekKey===wk&&h.type==="perso"));
-    }else{
-      nd[key]=true;np[pm]=(np[pm]||0)+1;
-      nh=addHistory({member:pm,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"perso"});
-      sendPushNotification(`${pe(pm)} ${pm} a fait une tâche !`,task);
-    }
+    if(nd[key]){delete nd[key];np[pm]=Math.max(0,(np[pm]||0)-1);nh=history.filter(h=>!(h.task===task&&h.member===pm&&h.weekKey===wk&&h.type==="perso"));}
+    else{nd[key]=true;np[pm]=(np[pm]||0)+1;nh=addHist({member:pm,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"perso"});sendPushNotification(`${pe(pm)} ${pm} a fait une tâche !`,task);}
     setDone(nd);setPoints(np);setHistory(nh);dbSet({done:nd,points:np,history:nh});
   }
-
   function postInitiative(){
     let label;
     if(initTask==="Ranger une pièce")label=`Ranger une pièce : ${initRoom}`;
     else if(initTask==="Autre (décrire)")label=initCustom.trim()||"Tâche personnalisée";
     else label=initTask;
-    const ni={task:label,postedBy:selectedMember,postedAt:new Date().toLocaleDateString("fr-FR"),acceptedBy:null,done:false};
+    const ni={task:label,postedBy:selectedMember,postedAt:new Date().toLocaleDateString("fr-FR"),acceptedBy:null};
     setInitiative(ni);dbSet({initiative:ni});setShowInitiativeForm(false);
     sendPushNotification("⭐ Nouvelle initiative !",`${selectedMember} a posté : ${label} (+2 pts)`);
   }
-  function acceptInitiative(){
-    const ni={...initiative,acceptedBy:selectedMember};
-    setInitiative(ni);dbSet({initiative:ni});
-    sendPushNotification(`✋ ${selectedMember} prend en charge l'initiative !`,initiative.task);
-  }
+  function acceptInitiative(){const ni={...initiative,acceptedBy:selectedMember};setInitiative(ni);dbSet({initiative:ni});}
   function completeInitiative(){
     const member=initiative.acceptedBy;
     const np={...points,[member]:(points[member]||0)+2};
-    const nh=addHistory({member,task:`⭐ Initiative : ${initiative.task}`,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"initiative"});
-    setPoints(np);setHistory(nh);setInitiative(null);
-    dbSet({points:np,history:nh,initiative:null});
+    const nh=addHist({member,task:`⭐ ${initiative.task}`,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"initiative"});
+    setPoints(np);setHistory(nh);setInitiative(null);dbSet({points:np,history:nh,initiative:null});
     sendPushNotification(`🏆 ${member} a terminé l'initiative !`,`${initiative.task} (+2 pts)`);
   }
   function cancelInitiative(){setInitiative(null);dbSet({initiative:null});}
-
   function sendMessage(){
     if(!newMsg.trim())return;
     const nm=[...messages,{from:selectedMember,text:newMsg.trim(),date:new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),day:new Date().toLocaleDateString("fr-FR")}].slice(-100);
     setMessages(nm);dbSet({messages:nm});setNewMsg("");
     sendPushNotification(`💬 ${selectedMember}`,newMsg.trim());
   }
-
   function nextWeek(){
     const late=Object.keys(profiles).filter(m=>{
       const personal=PERSONAL_TASKS[m]||[];
@@ -358,7 +363,7 @@ export default function App(){
     if(histFilter==="week")return h.weekKey===wk;
     return true;
   });
-  const typeBadgeStyle=(type)=>{
+  const typeBadge=(type)=>{
     const map={commune:{bg:"#EDE9FE",c:"#7C3AED"},perso:{bg:"#E0F2FE",c:"#0284C7"},couple:{bg:"#DCFCE7",c:"#16A34A"},initiative:{bg:"#FEF9C3",c:"#A16207"},hebdo:{bg:"#f0f0f5",c:"#888"}};
     const x=map[type]||map.hebdo;return{fontSize:10,padding:"2px 7px",borderRadius:99,background:x.bg,color:x.c,fontWeight:600,whiteSpace:"nowrap"};
   };
@@ -456,193 +461,183 @@ export default function App(){
           </div>
         )}
 
-        {page==="tasks"&&(
-          <>
-            {/* Tâches hebdomadaires */}
-            <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                <p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:0}}>Tâches hebdomadaires Michel &amp; Gabrielle</p>
-                <span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:"#f0f0f5",color:"#888",fontWeight:500}}>{sharedDone}/{SHARED_DAILY.length}</span>
-              </div>
-              <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}>
-                <div style={{height:"100%",borderRadius:3,background:color,width:`${SHARED_DAILY.length?(sharedDone/SHARED_DAILY.length)*100:0}%`,transition:"width 0.3s"}}/>
-              </div>
-              {SHARED_DAILY.map(task=>{
-                const key=`${today}|shared|${task}`;
-                const timesToday=history.filter(h=>h.task===task&&h.dayKey===today&&h.type==="commune").length;
-                const isDouble=DOUBLE_POINTS_TASKS.includes(task);
-                return(
-                  <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
-                    <div onClick={()=>claimShared(task)} style={{width:26,height:26,borderRadius:13,border:`2px solid ${color}44`,background:`${color}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>
-                      <Plus color={color}/>
-                    </div>
-                    <span onClick={()=>claimShared(task)} style={{fontSize:14,color:"#1a1a2e",flex:1,cursor:"pointer"}}>{task}</span>
-                    {isDouble&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:99,background:"#FEF9C3",color:"#A16207",fontWeight:600}}>×2 pts</span>}
-                    {timesToday>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${color}22`,color,fontWeight:600}}>×{timesToday}</span>}
-                    <TaskPhotoButton taskKey={key}/>
-                  </div>
-                );
-              })}
+        {page==="tasks"&&(<>
+          {/* Tâches hebdomadaires */}
+          <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:0}}>Tâches hebdomadaires Michel &amp; Gabrielle</p>
+              <span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:"#f0f0f5",color:"#888",fontWeight:500}}>{sharedDone}/{SHARED_DAILY.length}</span>
             </div>
-
-            {/* Michel vs Gabrielle */}
-            {(()=>{
-              const counts=kidsCommonCount();
-              const mS=counts["Michel"]||0;const gS=counts["Gabrielle"]||0;const total=mS+gS||1;
-              const setter=whoSetsTableToday();
+            <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}>
+              <div style={{height:"100%",borderRadius:3,background:color,width:`${SHARED_DAILY.length?(sharedDone/SHARED_DAILY.length)*100:0}%`,transition:"width 0.3s"}}/>
+            </div>
+            {SHARED_DAILY.map(task=>{
+              const key=`${today}|shared|${task}`;
+              const timesToday=history.filter(h=>h.task===task&&h.dayKey===today&&h.type==="commune").length;
+              const isDouble=DOUBLE_POINTS_TASKS.includes(task);
               return(
-                <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
-                  <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:"0 0 10px"}}>⚔️ Michel vs Gabrielle</p>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                    <span style={{fontSize:13,fontWeight:700,color:pc("Michel"),minWidth:54}}>{pe("Michel")} {mS}</span>
-                    <div style={{flex:1,height:10,borderRadius:5,background:"#f0f0f5",overflow:"hidden",display:"flex"}}>
-                      <div style={{height:"100%",background:pc("Michel"),width:`${(mS/total)*100}%`,transition:"width 0.4s"}}/>
-                      <div style={{height:"100%",background:pc("Gabrielle"),width:`${(gS/total)*100}%`,transition:"width 0.4s"}}/>
-                    </div>
-                    <span style={{fontSize:13,fontWeight:700,color:pc("Gabrielle"),minWidth:54,textAlign:"right"}}>{gS} {pe("Gabrielle")}</span>
-                  </div>
-                  <p style={{fontSize:11,color:"#aaa",textAlign:"center",margin:"0 0 12px"}}>Tâches hebdomadaires · récompense au meilleur !</p>
-                  <div style={{borderTop:"1px solid #f5f5f7",paddingTop:10}}>
-                    <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>🍽️ Table aujourd'hui</p>
-                    {!getTableSetter()?<p style={{fontSize:12,color:"#aaa",margin:0}}>Le 1er enfant à mettre la table ce lundi définit le roulement.</p>:(
-                      <div style={{display:"flex",gap:8}}>
-                        {[{kid:"Michel",role:setter==="Michel"?"Mettre la table":"Débarrasser"},{kid:"Gabrielle",role:setter==="Gabrielle"?"Mettre la table":"Débarrasser"}].map(({kid,role})=>(
-                          <div key={kid} style={{flex:1,background:`${pc(kid)}12`,borderRadius:14,padding:"8px",textAlign:"center"}}>
-                            <div style={{fontSize:20}}>{pe(kid)}</div>
-                            <p style={{fontSize:12,fontWeight:700,color:pc(kid),margin:"3px 0 1px"}}>{kid}</p>
-                            <p style={{fontSize:11,color:"#888",margin:0}}>{role}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Initiative */}
-            <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:"1.5px solid #FEF9C3"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>⭐ Initiative <span style={{fontSize:12,color:"#A16207",fontWeight:600,marginLeft:6}}>+2 pts</span></p>
-                {!initiative&&<button onClick={()=>setShowInitiativeForm(true)} style={{fontSize:12,padding:"6px 14px",borderRadius:99,background:"#FEF9C3",color:"#A16207",border:"none",fontWeight:700,cursor:"pointer"}}>+ Poster</button>}
-              </div>
-              {!initiative&&!showInitiativeForm&&<p style={{fontSize:13,color:"#aaa",margin:0}}>Aucune initiative en cours.</p>}
-              {showInitiativeForm&&(
-                <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                  <select value={initTask} onChange={e=>setInitTask(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>
-                    {INITIATIVE_TASKS.map(t=><option key={t}>{t}</option>)}
-                  </select>
-                  {initTask==="Ranger une pièce"&&(
-                    <select value={initRoom} onChange={e=>setInitRoom(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>
-                      {ROOMS.map(r=><option key={r}>{r}</option>)}
-                    </select>
-                  )}
-                  {initTask==="Autre (décrire)"&&(
-                    <input value={initCustom} onChange={e=>setInitCustom(e.target.value)} placeholder="Décris la tâche réalisée..." style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa",fontFamily:"inherit"}}/>
-                  )}
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={()=>setShowInitiativeForm(false)} style={{flex:1,background:"#f5f5f7",border:"none",borderRadius:12,padding:"10px",fontWeight:600,fontSize:13,cursor:"pointer"}}>Annuler</button>
-                    <button onClick={postInitiative} style={{flex:1,background:"#F59E0B",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer"}}>Poster !</button>
-                  </div>
-                </div>
-              )}
-              {initiative&&(
-                <div>
-                  <div style={{background:"#FEFCE8",borderRadius:14,padding:"12px",marginBottom:10}}>
-                    <p style={{fontWeight:700,fontSize:14,color:"#92400E",margin:"0 0 4px"}}>📋 {initiative.task}</p>
-                    <p style={{fontSize:12,color:"#aaa",margin:0}}>Posté par {initiative.postedBy} · {initiative.postedAt}</p>
-                    {initiative.acceptedBy&&<p style={{fontSize:12,color:pc(initiative.acceptedBy),fontWeight:600,margin:"4px 0 0"}}>✋ Pris en charge par {initiative.acceptedBy}</p>}
-                  </div>
-                  {!initiative.acceptedBy&&<button onClick={acceptInitiative} style={{width:"100%",background:color,color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Je prends en charge !</button>}
-                  {initiative.acceptedBy===selectedMember&&<button onClick={completeInitiative} style={{width:"100%",background:"#10B981",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Tâche terminée ! (+2 pts)</button>}
-                  {(isCouple||initiative.postedBy===selectedMember)&&<button onClick={cancelInitiative} style={{width:"100%",background:"#f5f5f7",color:"#aaa",border:"none",borderRadius:12,padding:"8px",fontWeight:600,fontSize:12,cursor:"pointer"}}>Annuler l'initiative</button>}
-                </div>
-              )}
-            </div>
-
-            {/* Maman & Papou */}
-            <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>Maman &amp; Papou</p>
-                <span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:"#f0f0f5",color:"#888",fontWeight:500}}>{coupleDone}/{COUPLE_POOL.length} semaine</span>
-              </div>
-              <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}>
-                <div style={{height:"100%",borderRadius:3,background:"#5DCAA5",width:`${COUPLE_POOL.length?(coupleDone/COUPLE_POOL.length)*100:0}%`,transition:"width 0.3s"}}/>
-              </div>
-              {COUPLE_POOL.map(task=>{
-                const key=`${wk}|couple|${task}`;
-                const timesThisWeek=history.filter(h=>h.task===task&&h.weekKey===wk&&h.type==="couple").length;
-                return(
-                  <div key={task} onClick={()=>claimCouple(task)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7",cursor:isCouple?"pointer":"default",opacity:!isCouple?0.5:1}}>
-                    <div style={{width:26,height:26,borderRadius:13,border:`2px solid ${isCouple?color+"44":"#ddd"}`,background:isCouple?`${color}22`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      {isCouple&&<Plus color={color}/>}
-                    </div>
-                    <span style={{fontSize:14,color:"#1a1a2e",flex:1}}>{task}</span>
-                    {timesThisWeek>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:"#DCFCE7",color:"#16A34A",fontWeight:600}}>×{timesThisWeek}</span>}
-                    {!isCouple&&<span style={{fontSize:11,color:"#ccc"}}>Maman/Papou</span>}
-                    <TaskPhotoButton taskKey={key}/>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Tâches perso */}
-            {Object.keys(profiles).filter(m=>(PERSONAL_TASKS[m]||[]).length>0).map(pm=>{
-              const pmTasks=PERSONAL_TASKS[pm]||[];
-              const pmDone=pmTasks.filter(t=>done[`${wk}|personal|${pm}|${t}`]).length;
-              const pmC=pc(pm);const pmE=pe(pm);const isOwn=pm===selectedMember;
-              return(
-                <div key={pm} style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:isOwn?`2px solid ${pmC}44`:"none"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <div style={{width:30,height:30,borderRadius:15,background:`${pmC}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>{pmE}</div>
-                      <p style={{fontWeight:700,fontSize:15,color:pmC,margin:0}}>{pm}{isOwn?" ✓":""}</p>
-                    </div>
-                    <span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:`${pmC}15`,color:pmC,fontWeight:700}}>{pmDone}/{pmTasks.length}</span>
-                  </div>
-                  <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}>
-                    <div style={{height:"100%",borderRadius:3,background:pmC,width:`${pmTasks.length?(pmDone/pmTasks.length)*100:0}%`,transition:"width 0.3s"}}/>
-                  </div>
-                  {pmTasks.map(task=>{
-                    const key=`${wk}|personal|${pm}|${task}`;const checked=!!done[key];
-                    return(
-                      <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
-                        <div onClick={()=>isOwn&&togglePersonal(pm,task)} style={{width:26,height:26,borderRadius:13,border:checked?"none":`2px solid ${isOwn?pmC+"44":"#ddd"}`,background:checked?pmC:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:isOwn?"pointer":"default"}}>{checked&&<Tick/>}</div>
-                        <span onClick={()=>isOwn&&togglePersonal(pm,task)} style={{fontSize:14,color:checked?"#bbb":"#1a1a2e",textDecoration:checked?"line-through":"none",flex:1,cursor:isOwn?"pointer":"default",opacity:!isOwn&&!checked?0.5:1}}>{task}</span>
-                        <TaskPhotoButton taskKey={key}/>
-                      </div>
-                    );
-                  })}
+                <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
+                  <div onClick={()=>claimShared(task)} style={{width:26,height:26,borderRadius:13,border:`2px solid ${color}44`,background:`${color}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}><Plus color={color}/></div>
+                  <span onClick={()=>claimShared(task)} style={{fontSize:14,color:"#1a1a2e",flex:1,cursor:"pointer"}}>{task}</span>
+                  {isDouble&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:99,background:"#FEF9C3",color:"#A16207",fontWeight:600}}>×2 pts</span>}
+                  {timesToday>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${color}22`,color,fontWeight:600}}>×{timesToday}</span>}
+                  <PhotoBtn taskKey={key}/>
                 </div>
               );
             })}
+          </div>
 
-            {/* Challenges */}
-            {KIDS.map(kid=>{
-              const kp=kidChallenge(kid);const kC=pc(kid);const kE=pe(kid);const isOwn=kid===selectedMember;
+          {/* Michel vs Gabrielle */}
+          {(()=>{
+            const counts=kidsCommonCount();
+            const mS=counts["Michel"]||0;const gS=counts["Gabrielle"]||0;const total=mS+gS||1;
+            const setter=whoSetsTableToday();
+            return(
+              <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
+                <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:"0 0 10px"}}>⚔️ Michel vs Gabrielle</p>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                  <span style={{fontSize:13,fontWeight:700,color:pc("Michel"),minWidth:54}}>{pe("Michel")} {mS}</span>
+                  <div style={{flex:1,height:10,borderRadius:5,background:"#f0f0f5",overflow:"hidden",display:"flex"}}>
+                    <div style={{height:"100%",background:pc("Michel"),width:`${(mS/total)*100}%`,transition:"width 0.4s"}}/>
+                    <div style={{height:"100%",background:pc("Gabrielle"),width:`${(gS/total)*100}%`,transition:"width 0.4s"}}/>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:700,color:pc("Gabrielle"),minWidth:54,textAlign:"right"}}>{gS} {pe("Gabrielle")}</span>
+                </div>
+                <p style={{fontSize:11,color:"#aaa",textAlign:"center",margin:"0 0 12px"}}>Tâches hebdomadaires · récompense au meilleur !</p>
+                <div style={{borderTop:"1px solid #f5f5f7",paddingTop:10}}>
+                  <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>🍽️ Table aujourd'hui</p>
+                  {!getTableSetter()?<p style={{fontSize:12,color:"#aaa",margin:0}}>Le 1er enfant à mettre la table ce lundi définit le roulement.</p>:(
+                    <div style={{display:"flex",gap:8}}>
+                      {[{kid:"Michel",role:setter==="Michel"?"Mettre la table":"Débarrasser"},{kid:"Gabrielle",role:setter==="Gabrielle"?"Mettre la table":"Débarrasser"}].map(({kid,role})=>(
+                        <div key={kid} style={{flex:1,background:`${pc(kid)}12`,borderRadius:14,padding:"8px",textAlign:"center"}}>
+                          <div style={{fontSize:20}}>{pe(kid)}</div>
+                          <p style={{fontSize:12,fontWeight:700,color:pc(kid),margin:"3px 0 1px"}}>{kid}</p>
+                          <p style={{fontSize:11,color:"#888",margin:0}}>{role}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Initiative */}
+          <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:"1.5px solid #FEF9C3"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>⭐ Initiative <span style={{fontSize:12,color:"#A16207",fontWeight:600,marginLeft:6}}>+2 pts</span></p>
+              {!initiative&&<button onClick={()=>setShowInitiativeForm(true)} style={{fontSize:12,padding:"6px 14px",borderRadius:99,background:"#FEF9C3",color:"#A16207",border:"none",fontWeight:700,cursor:"pointer"}}>+ Poster</button>}
+            </div>
+            {!initiative&&!showInitiativeForm&&<p style={{fontSize:13,color:"#aaa",margin:0}}>Aucune initiative en cours.</p>}
+            {showInitiativeForm&&(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <select value={initTask} onChange={e=>setInitTask(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>
+                  {INITIATIVE_TASKS.map(t=><option key={t}>{t}</option>)}
+                </select>
+                {initTask==="Ranger une pièce"&&<select value={initRoom} onChange={e=>setInitRoom(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>{ROOMS.map(r=><option key={r}>{r}</option>)}</select>}
+                {initTask==="Autre (décrire)"&&<input value={initCustom} onChange={e=>setInitCustom(e.target.value)} placeholder="Décris la tâche..." style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa",fontFamily:"inherit"}}/>}
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>setShowInitiativeForm(false)} style={{flex:1,background:"#f5f5f7",border:"none",borderRadius:12,padding:"10px",fontWeight:600,fontSize:13,cursor:"pointer"}}>Annuler</button>
+                  <button onClick={postInitiative} style={{flex:1,background:"#F59E0B",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer"}}>Poster !</button>
+                </div>
+              </div>
+            )}
+            {initiative&&(
+              <div>
+                <div style={{background:"#FEFCE8",borderRadius:14,padding:"12px",marginBottom:10}}>
+                  <p style={{fontWeight:700,fontSize:14,color:"#92400E",margin:"0 0 4px"}}>📋 {initiative.task}</p>
+                  <p style={{fontSize:12,color:"#aaa",margin:0}}>Posté par {initiative.postedBy} · {initiative.postedAt}</p>
+                  {initiative.acceptedBy&&<p style={{fontSize:12,color:pc(initiative.acceptedBy),fontWeight:600,margin:"4px 0 0"}}>✋ Pris en charge par {initiative.acceptedBy}</p>}
+                </div>
+                {!initiative.acceptedBy&&<button onClick={acceptInitiative} style={{width:"100%",background:color,color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Je prends en charge !</button>}
+                {initiative.acceptedBy===selectedMember&&<button onClick={completeInitiative} style={{width:"100%",background:"#10B981",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Tâche terminée ! (+2 pts)</button>}
+                {(isCouple||initiative.postedBy===selectedMember)&&<button onClick={cancelInitiative} style={{width:"100%",background:"#f5f5f7",color:"#aaa",border:"none",borderRadius:12,padding:"8px",fontWeight:600,fontSize:12,cursor:"pointer"}}>Annuler</button>}
+              </div>
+            )}
+          </div>
+
+          {/* Maman & Papou */}
+          <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>Maman &amp; Papou</p>
+              <span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:"#f0f0f5",color:"#888",fontWeight:500}}>{coupleDone}/{COUPLE_POOL.length} semaine</span>
+            </div>
+            <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}>
+              <div style={{height:"100%",borderRadius:3,background:"#5DCAA5",width:`${COUPLE_POOL.length?(coupleDone/COUPLE_POOL.length)*100:0}%`,transition:"width 0.3s"}}/>
+            </div>
+            {COUPLE_POOL.map(task=>{
+              const key=`${wk}|couple|${task}`;
+              const timesThisWeek=history.filter(h=>h.task===task&&h.weekKey===wk&&h.type==="couple").length;
               return(
-                <div key={kid} style={{background:kp.unlocked?`${kC}15`:"#fff",border:kp.unlocked?`2px solid ${kC}`:"1px solid #f0f0f5",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                    <span style={{fontSize:20}}>{kp.unlocked?"🏆":"🎯"}</span>
-                    <div style={{width:26,height:26,borderRadius:13,background:`${kC}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{kE}</div>
-                    <p style={{fontWeight:700,fontSize:14,color:kC,margin:0}}>Challenge {kid}{isOwn?" (moi)":""}</p>
-                    <span style={{marginLeft:"auto",fontSize:12,color:kp.unlocked?kC:"#aaa",fontWeight:700}}>{kp.pct}%</span>
+                <div key={task} onClick={()=>claimCouple(task)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7",cursor:isCouple?"pointer":"default",opacity:!isCouple?0.5:1}}>
+                  <div style={{width:26,height:26,borderRadius:13,border:`2px solid ${isCouple?color+"44":"#ddd"}`,background:isCouple?`${color}22`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {isCouple&&<Plus color={color}/>}
                   </div>
-                  <div style={{height:8,borderRadius:4,background:"#f0f0f5",marginBottom:8,overflow:"hidden"}}>
-                    <div style={{height:"100%",borderRadius:4,background:kC,width:`${kp.pct}%`,transition:"width 0.4s"}}/>
-                  </div>
-                  <p style={{fontSize:12,color:kp.unlocked?kC:"#aaa",margin:"0 0 2px",fontWeight:kp.unlocked?700:400}}>{kp.unlocked?"Débloqué !":"Récompense si toutes les tâches sont faites :"}</p>
-                  <p style={{fontSize:13,color:"#1a1a2e",margin:0}}>{rewards[kid]||"Récompense à définir"}</p>
-                  {kp.unlocked&&isOwn&&!unlockedShown[kid]&&<button onClick={()=>dismissUnlock(kid)} style={{marginTop:8,background:kC,color:"#fff",border:"none",borderRadius:12,padding:"6px 16px",fontWeight:700,fontSize:13,cursor:"pointer"}}>OK !</button>}
+                  <span style={{fontSize:14,color:"#1a1a2e",flex:1}}>{task}</span>
+                  {timesThisWeek>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:"#DCFCE7",color:"#16A34A",fontWeight:600}}>×{timesThisWeek}</span>}
+                  {!isCouple&&<span style={{fontSize:11,color:"#ccc"}}>Maman/Papou</span>}
+                  <PhotoBtn taskKey={key}/>
                 </div>
               );
             })}
+          </div>
 
-            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
-              <button onClick={nextWeek} style={{background:color,color:"#fff",border:"none",borderRadius:16,padding:"12px 22px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Semaine suivante →</button>
-            </div>
-          </>
-        )}
+          {/* Tâches perso */}
+          {Object.keys(profiles).filter(m=>(PERSONAL_TASKS[m]||[]).length>0).map(pm=>{
+            const pmTasks=PERSONAL_TASKS[pm]||[];
+            const pmDone=pmTasks.filter(t=>done[`${wk}|personal|${pm}|${t}`]).length;
+            const pmC=pc(pm);const pmE=pe(pm);const isOwn=pm===selectedMember;
+            return(
+              <div key={pm} style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:isOwn?`2px solid ${pmC}44`:"none"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:30,height:30,borderRadius:15,background:`${pmC}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>{pmE}</div>
+                    <p style={{fontWeight:700,fontSize:15,color:pmC,margin:0}}>{pm}{isOwn?" ✓":""}</p>
+                  </div>
+                  <span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:`${pmC}15`,color:pmC,fontWeight:700}}>{pmDone}/{pmTasks.length}</span>
+                </div>
+                <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}>
+                  <div style={{height:"100%",borderRadius:3,background:pmC,width:`${pmTasks.length?(pmDone/pmTasks.length)*100:0}%`,transition:"width 0.3s"}}/>
+                </div>
+                {pmTasks.map(task=>{
+                  const key=`${wk}|personal|${pm}|${task}`;const checked=!!done[key];
+                  return(
+                    <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
+                      <div onClick={()=>isOwn&&togglePersonal(pm,task)} style={{width:26,height:26,borderRadius:13,border:checked?"none":`2px solid ${isOwn?pmC+"44":"#ddd"}`,background:checked?pmC:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:isOwn?"pointer":"default"}}>{checked&&<Tick/>}</div>
+                      <span onClick={()=>isOwn&&togglePersonal(pm,task)} style={{fontSize:14,color:checked?"#bbb":"#1a1a2e",textDecoration:checked?"line-through":"none",flex:1,cursor:isOwn?"pointer":"default",opacity:!isOwn&&!checked?0.5:1}}>{task}</span>
+                      <PhotoBtn taskKey={key}/>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          {/* Challenges */}
+          {KIDS.map(kid=>{
+            const kp=kidChallenge(kid);const kC=pc(kid);const kE=pe(kid);const isOwn=kid===selectedMember;
+            return(
+              <div key={kid} style={{background:kp.unlocked?`${kC}15`:"#fff",border:kp.unlocked?`2px solid ${kC}`:"1px solid #f0f0f5",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:20}}>{kp.unlocked?"🏆":"🎯"}</span>
+                  <div style={{width:26,height:26,borderRadius:13,background:`${kC}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{kE}</div>
+                  <p style={{fontWeight:700,fontSize:14,color:kC,margin:0}}>Challenge {kid}{isOwn?" (moi)":""}</p>
+                  <span style={{marginLeft:"auto",fontSize:12,color:kp.unlocked?kC:"#aaa",fontWeight:700}}>{kp.pct}%</span>
+                </div>
+                <div style={{height:8,borderRadius:4,background:"#f0f0f5",marginBottom:8,overflow:"hidden"}}>
+                  <div style={{height:"100%",borderRadius:4,background:kC,width:`${kp.pct}%`,transition:"width 0.4s"}}/>
+                </div>
+                <p style={{fontSize:12,color:kp.unlocked?kC:"#aaa",margin:"0 0 2px",fontWeight:kp.unlocked?700:400}}>{kp.unlocked?"Débloqué !":"Récompense si toutes les tâches sont faites :"}</p>
+                <p style={{fontSize:13,color:"#1a1a2e",margin:0}}>{rewards[kid]||"Récompense à définir"}</p>
+                {kp.unlocked&&isOwn&&!unlockedShown[kid]&&<button onClick={()=>dismissUnlock(kid)} style={{marginTop:8,background:kC,color:"#fff",border:"none",borderRadius:12,padding:"6px 16px",fontWeight:700,fontSize:13,cursor:"pointer"}}>OK !</button>}
+              </div>
+            );
+          })}
+
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+            <button onClick={nextWeek} style={{background:color,color:"#fff",border:"none",borderRadius:16,padding:"12px 22px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Semaine suivante →</button>
+          </div>
+        </>)}
 
         {page==="scores"&&(
           <div style={{background:"#fff",borderRadius:20,padding:"1rem",boxShadow:"0 1px 8px #0000000a"}}>
@@ -681,7 +676,8 @@ export default function App(){
               {filteredHist.map((h,i)=>{
                 const c=pc(h.member);const e=pe(h.member);
                 const photoKey=h.type==="commune"?`${h.dayKey}|shared|${h.task}`:h.type==="couple"?`${h.weekKey}|couple|${h.task}`:`${h.weekKey}|personal|${h.member}|${h.task}`;
-                const photoUrl=getPhotoUrl(photoKey);
+                const photoData=photos[photoKey];
+                const photoUrl=photoData?(typeof photoData==="string"?photoData:photoData.url):null;
                 return(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
                     <div style={{width:34,height:34,borderRadius:17,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{e}</div>
@@ -690,8 +686,9 @@ export default function App(){
                       <p style={{fontSize:12,color:"#888",margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{h.task}</p>
                     </div>
                     <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                      {photoUrl&&<button onClick={()=>setPhotoViewer({url:photoUrl,taskKey:photoKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14}}>📸</button>}                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
-                        <span style={typeBadgeStyle(h.type)}>{h.type}</span>
+                      {photoUrl&&<button onClick={()=>setPhotoViewer({url:photoUrl,path:photoData?.path||"",taskKey:photoKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14}}>📸</button>}
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+                        <span style={typeBadge(h.type)}>{h.type}</span>
                         <span style={{fontSize:11,color:"#bbb"}}>{h.date}</span>
                       </div>
                     </div>
@@ -742,12 +739,12 @@ export default function App(){
         </div>
       </div>
 
-      {/* Photo viewer */}
+      {/* Photo viewer avec suppression */}
       {photoViewer&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}} onClick={()=>setPhotoViewer(null)}>
-          <img src={photoViewer.url} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:16,objectFit:"contain"}} alt="Preuve tâche"/>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}}>
           <button onClick={()=>setPhotoViewer(null)} style={{position:"absolute",top:20,right:20,width:40,height:40,borderRadius:20,background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",fontSize:20,cursor:"pointer"}}>✕</button>
-          <button onClick={e=>{e.stopPropagation();deletePhoto(photoViewer.taskKey);}} style={{position:"absolute",bottom:30,left:"50%",transform:"translateX(-50%)",background:"#ef4444",color:"#fff",border:"none",borderRadius:16,padding:"12px 24px",fontWeight:700,fontSize:14,cursor:"pointer"}}>🗑️ Supprimer la photo</button>
+          <img src={photoViewer.url} style={{maxWidth:"100%",maxHeight:"75vh",borderRadius:16,objectFit:"contain"}} alt="Preuve tâche"/>
+          <button onClick={()=>handlePhotoDelete(photoViewer.taskKey,photoViewer.path)} style={{marginTop:20,background:"#ef4444",color:"#fff",border:"none",borderRadius:16,padding:"12px 28px",fontWeight:700,fontSize:15,cursor:"pointer"}}>🗑️ Supprimer</button>
         </div>
       )}
 
@@ -838,15 +835,11 @@ export default function App(){
             <p style={{fontWeight:700,fontSize:17,color:"#1a1a2e",margin:"0 0 1.25rem"}}>Mon profil</p>
             <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Mon emoji</p>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
-              {EMOJI_OPTIONS.map(em=>(
-                <button key={em} onClick={()=>setEditEmoji(em)} style={{width:44,height:44,borderRadius:12,border:editEmoji===em?`2.5px solid ${editColor}`:"1.5px solid #eee",background:editEmoji===em?`${editColor}15`:"#fafafa",fontSize:22,cursor:"pointer"}}>{em}</button>
-              ))}
+              {EMOJI_OPTIONS.map(em=><button key={em} onClick={()=>setEditEmoji(em)} style={{width:44,height:44,borderRadius:12,border:editEmoji===em?`2.5px solid ${editColor}`:"1.5px solid #eee",background:editEmoji===em?`${editColor}15`:"#fafafa",fontSize:22,cursor:"pointer"}}>{em}</button>)}
             </div>
             <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Ma couleur</p>
             <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
-              {COLOR_OPTIONS.map(c=>(
-                <button key={c} onClick={()=>setEditColor(c)} style={{width:38,height:38,borderRadius:19,background:c,border:editColor===c?"3px solid #1a1a2e":"3px solid transparent",cursor:"pointer"}}/>
-              ))}
+              {COLOR_OPTIONS.map(c=><button key={c} onClick={()=>setEditColor(c)} style={{width:38,height:38,borderRadius:19,background:c,border:editColor===c?"3px solid #1a1a2e":"3px solid transparent",cursor:"pointer"}}/>)}
             </div>
             <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Code PIN (4 chiffres)</p>
             <input value={editPin} onChange={e=>setEditPin(e.target.value.replace(/\D/g,"").slice(0,4))} maxLength={4} placeholder="0000" style={{width:"100%",fontSize:20,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box",letterSpacing:8,textAlign:"center",fontFamily:"inherit"}}/>
