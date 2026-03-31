@@ -236,12 +236,16 @@ export default function App(){
     // 2. Met à jour localement
     const np={...photos};
     delete np[taskKey];
-    setPhotos(np);
-    // 3. Met à jour en DB
-    const dbPhotos={};
-    Object.entries(np).forEach(([k,v])=>{dbPhotos[k]=v;});
-    await dbSet({photos:dbPhotos});
-    // 4. Ferme le viewer
+    // 3. Force un objet vide si plus de photos (jamais null)
+    const safePhotos=Object.keys(np).length>0?np:{};
+    setPhotos(safePhotos);
+    // 4. Met à jour en DB avec valeur explicite non-null
+    await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{
+      method:"PATCH",
+      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},
+      body:JSON.stringify({photos:safePhotos,updated_at:new Date().toISOString()})
+    });
+    // 5. Ferme le viewer
     setPhotoViewer(null);
   }
 
