@@ -183,8 +183,11 @@ export default function App(){
     setUploadingKey(taskKey);
     try{
       const url=await uploadPhoto(file,taskKey);
-      const np={...photos,[taskKey]:url};
-      setPhotos(np);await dbSet({photos:np});
+      if(url){
+        const np={...photos,[taskKey]:url};
+        setPhotos(np);
+        await dbSet({photos:np});
+      }
     }catch(err){console.error(err);}
     setUploadingKey(null);
   }
