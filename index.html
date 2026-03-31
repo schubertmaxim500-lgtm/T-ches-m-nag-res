@@ -26,15 +26,13 @@
   <body>
     <div id="root"></div>
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script>
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   OneSignalDeferred.push(async function(OneSignal) {
     await OneSignal.init({
-      appId: "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631",
-      serviceWorkerParam: { scope: "/" },
-      serviceWorkerPath: "OneSignalSDKWorker.js"
+      appId: "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631"
     });
-    await OneSignal.Notifications.requestPermission();
   });
 </script>
   </body>
