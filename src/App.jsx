@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 
 const SUPABASE_URL = "https://nbxiydhjlhjvuaggaxve.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Re31HJlpQz46zZxTc6l_VA_IxTCCfoa";
+const SUPABASE_STORAGE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ieGl5ZGhqbGhqdnVhZ2dheHZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDkyODQsImV4cCI6MjA5MDMyNTI4NH0.W8iP9cfhp-6kxopZ4-qI5YnwTceDW1Ymatodx5BvEgQ";
 const ONESIGNAL_APP_ID = "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631";
 const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_API_KEY;
 
@@ -40,7 +41,7 @@ async function photoUpload(file,taskKey){
     const path=`${safe}_${Date.now()}.jpg`;
     const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{
       method:"POST",
-      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"image/jpeg"},
+      headers:{apikey:SUPABASE_STORAGE_KEY,Authorization:`Bearer ${SUPABASE_STORAGE_KEY}`,"Content-Type":"image/jpeg"},
       body:compressed
     });
     if(!res.ok){console.error("upload failed",await res.text());return null;}
@@ -53,7 +54,7 @@ async function photoDelete(path){
   try{
     await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{
       method:"DELETE",
-      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}
+      headers:{apikey:SUPABASE_STORAGE_KEY,Authorization:`Bearer ${SUPABASE_STORAGE_KEY}`}
     });
   }catch(e){console.error(e);}
 }
