@@ -29,7 +29,6 @@ async function compressImage(file){
     img.src=url;
   });
 }
-
 async function uploadPhoto(file,key){
   const compressed=await compressImage(file);
   const safeName=key.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
@@ -50,7 +49,8 @@ const COUPLE_POOL=["Passer l'aspirateur","Passer le mop","Faire une machine à l
 const PERSONAL_TASKS={
   Michel:["Ranger sa chambre","Passer l'aspirateur dans sa chambre","Passer le mop dans sa chambre","Ranger ses vêtements","Ramasser ses affaires et les ranger dans sa chambre","Nettoyer sa salle de bain"],
   Gabrielle:["Ranger sa chambre","Passer l'aspirateur dans sa chambre","Passer le mop dans sa chambre","Ranger ses vêtements","Ramasser ses affaires et les ranger dans sa chambre","Nettoyer sa salle de bain"],
-  Maman:["Ranger ses vêtements"],Papou:["Ranger ses vêtements"],
+  Maman:["Ranger ses vêtements"],
+  Papou:["Ranger ses vêtements"],
 };
 const KIDS=["Michel","Gabrielle"];
 const COUPLE=["Maman","Papou"];
@@ -64,7 +64,7 @@ const RULES=[
   {emoji:"🏠",title:"Tâches hebdomadaires Michel & Gabrielle",desc:"Remplir/vider le lave-vaisselle, sortir les poubelles, mettre/débarrasser la table, s'occuper de Tabby. Tout le monde peut les faire !"},
   {emoji:"👫",title:"Tâches Maman & Papou",desc:"Aspirateur, mop, machine à laver, linge… Ces tâches sont réservées à Maman et Papou."},
   {emoji:"🛏️",title:"Tâches personnelles",desc:"Chaque membre a ses propres tâches (chambre, vêtements…). Chacun coche les siennes."},
-  {emoji:"⭐",title:"Initiatives",desc:"Maman ou Papou peut poster une tâche bonus. Michel ou Gabrielle peut la prendre et la réaliser. Les initiatives rapportent 2 points au lieu de 1 !"},
+  {emoji:"⭐",title:"Initiatives",desc:"Tout le monde peut poster une tâche bonus. Réalise-la pour gagner 2 points !"},
   {emoji:"🏆",title:"Challenges Michel & Gabrielle",desc:"Terminez toutes vos tâches perso dans la semaine pour débloquer votre récompense !"},
   {emoji:"⚔️",title:"Compétition",desc:"Celui qui fait le plus de tâches hebdomadaires dans la semaine gagne une récompense !"},
   {emoji:"📸",title:"Photos de preuves",desc:"Pour chaque tâche, tu peux ajouter une photo pour prouver que c'est fait ! Visible par toute la famille."},
@@ -78,6 +78,7 @@ function weekKey(d=new Date()){const s=new Date(d.getFullYear(),0,0);return `${d
 function yesterdayKey(){const d=new Date();d.setDate(d.getDate()-1);return dayKey(d);}
 function msUntilMidnight(){const n=new Date(),m=new Date(n);m.setHours(24,0,0,0);return m-n;}
 const Tick=()=><svg width="14" height="14" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+const Plus=({color})=><svg width="10" height="10" viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="5" y1="2" x2="5" y2="8" stroke={color} strokeWidth="2" strokeLinecap="round"/></svg>;
 
 export default function App(){
   const [profiles,setProfiles]=useState(DEFAULT_PROFILES);
@@ -121,7 +122,6 @@ export default function App(){
 
   function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},msUntilMidnight()+500);}
 
-  // Init OneSignal
   useEffect(()=>{
     const script=document.createElement("script");
     script.src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
@@ -129,8 +129,7 @@ export default function App(){
     document.head.appendChild(script);
     window.OneSignalDeferred=window.OneSignalDeferred||[];
     window.OneSignalDeferred.push(async(OneSignal)=>{
-      await OneSignal.init({appId:ONESIGNAL_APP_ID,safari_web_id:"web.onesignal.auto.65de1f8b-1d6e-46f6-be4e-36b5f6c7f631",notifyButton:{enable:false},allowLocalhostAsSecureOrigin:true});
-      await OneSignal.Notifications.requestPermission();
+      await OneSignal.init({appId:ONESIGNAL_APP_ID,notifyButton:{enable:false},allowLocalhostAsSecureOrigin:true});
     });
   },[]);
 
@@ -148,16 +147,15 @@ export default function App(){
         setMessages(d.messages||[]);
         setUnlockedShown(d.unlocked||{});
         setPhotos(d.photos||{});
-        console.log("Photos loaded:", d.photos);
       }
     }catch(e){console.error(e);}
     setLoading(false);
   }
 
   useEffect(()=>{
-    scheduleMidnight();loadFromDB();
+    scheduleMidnight();
+    loadFromDB();
     pollTimer.current=setInterval(loadFromDB,5000);
-    // Notification de bienvenue au premier lancement du jour
     const lastWelcome=localStorage.getItem("fc_welcome_day");
     if(lastWelcome!==dayKey()){
       localStorage.setItem("fc_welcome_day",dayKey());
@@ -178,7 +176,6 @@ export default function App(){
   function pc(m){return(profiles[m]||DEFAULT_PROFILES[m]||{color:"#888"}).color;}
   function pe(m){return(profiles[m]||DEFAULT_PROFILES[m]||{emoji:"👤"}).emoji;}
   function addHistory(entry){return[entry,...history].slice(0,300);}
-
   function selectMember(m){setSelectedMember(m);setPin("");setPinError(false);setScreen("pin");}
   function logout(){setScreen("home");setSelectedMember(null);setPin("");}
   function dismissRules(){
@@ -210,7 +207,6 @@ export default function App(){
         const np={...photos,[taskKey]:url};
         setPhotos(np);
         await dbSet({photos:np});
-        // Force reload pour synchroniser
         await loadFromDB();
       }
     }catch(err){console.error(err);}
@@ -226,11 +222,13 @@ export default function App(){
     }catch(e){console.error(e);}
     setPhotoViewer(null);
   }
+
+  function TaskPhotoButton({taskKey}){
     const photoUrl=photos[taskKey];
     return(
       <div style={{display:"flex",alignItems:"center",gap:4}}>
         {photoUrl&&(
-          <button onClick={e=>{e.stopPropagation();setPhotoViewer(photoUrl);}} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>📸</button>
+          <button onClick={e=>{e.stopPropagation();setPhotoViewer({url:photoUrl,taskKey});}} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>📸</button>
         )}
         <label onClick={e=>e.stopPropagation()} style={{width:28,height:28,borderRadius:8,background:"#f0f0f5",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}>
           {uploadingKey===taskKey?"⏳":"📷"}
@@ -281,8 +279,8 @@ export default function App(){
 
   function postInitiative(){
     let label;
-    if(initTask==="Ranger une pièce") label=`Ranger une pièce : ${initRoom}`;
-    else if(initTask==="Autre (décrire)") label=initCustom.trim()||"Tâche personnalisée";
+    if(initTask==="Ranger une pièce")label=`Ranger une pièce : ${initRoom}`;
+    else if(initTask==="Autre (décrire)")label=initCustom.trim()||"Tâche personnalisée";
     else label=initTask;
     const ni={task:label,postedBy:selectedMember,postedAt:new Date().toLocaleDateString("fr-FR"),acceptedBy:null,done:false};
     setInitiative(ni);dbSet({initiative:ni});setShowInitiativeForm(false);
@@ -337,8 +335,8 @@ export default function App(){
   }
 
   const color=pc(selectedMember);const emoji=pe(selectedMember);
-  const sharedDone=SHARED_DAILY.filter(t=>done[`${today}|shared|${t}`]).length;
-  const coupleDone=COUPLE_POOL.filter(t=>done[`${wk}|couple|${t}`]).length;
+  const sharedDone=SHARED_DAILY.filter(t=>history.filter(h=>h.task===t&&h.dayKey===today&&h.type==="commune").length>0).length;
+  const coupleDone=COUPLE_POOL.filter(t=>history.filter(h=>h.task===t&&h.weekKey===wk&&h.type==="couple").length>0).length;
   const isCouple=COUPLE.includes(selectedMember);const isKid=KIDS.includes(selectedMember);
   const yday=yesterdayKey();
   const filteredHist=history.filter(h=>{
@@ -448,7 +446,6 @@ export default function App(){
         {page==="tasks"&&(
           <>
             {/* Tâches hebdomadaires */}
-            {/* Tâches hebdomadaires */}
             <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                 <p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:0}}>Tâches hebdomadaires Michel &amp; Gabrielle</p>
@@ -464,7 +461,7 @@ export default function App(){
                 return(
                   <div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
                     <div onClick={()=>claimShared(task)} style={{width:26,height:26,borderRadius:13,border:`2px solid ${color}44`,background:`${color}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}>
-                      <svg width="10" height="10" viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="5" y1="2" x2="5" y2="8" stroke={color} strokeWidth="2" strokeLinecap="round"/></svg>
+                      <Plus color={color}/>
                     </div>
                     <span onClick={()=>claimShared(task)} style={{fontSize:14,color:"#1a1a2e",flex:1,cursor:"pointer"}}>{task}</span>
                     {isDouble&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:99,background:"#FEF9C3",color:"#A16207",fontWeight:600}}>×2 pts</span>}
@@ -486,7 +483,7 @@ export default function App(){
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                     <span style={{fontSize:13,fontWeight:700,color:pc("Michel"),minWidth:54}}>{pe("Michel")} {mS}</span>
                     <div style={{flex:1,height:10,borderRadius:5,background:"#f0f0f5",overflow:"hidden",display:"flex"}}>
-                      <div style={{height:"100%",background:pc("Michel"),width:`${(mS/total)*100}%`,transition:"width 0.4f"}}/>
+                      <div style={{height:"100%",background:pc("Michel"),width:`${(mS/total)*100}%`,transition:"width 0.4s"}}/>
                       <div style={{height:"100%",background:pc("Gabrielle"),width:`${(gS/total)*100}%`,transition:"width 0.4s"}}/>
                     </div>
                     <span style={{fontSize:13,fontWeight:700,color:pc("Gabrielle"),minWidth:54,textAlign:"right"}}>{gS} {pe("Gabrielle")}</span>
@@ -543,9 +540,9 @@ export default function App(){
                     <p style={{fontSize:12,color:"#aaa",margin:0}}>Posté par {initiative.postedBy} · {initiative.postedAt}</p>
                     {initiative.acceptedBy&&<p style={{fontSize:12,color:pc(initiative.acceptedBy),fontWeight:600,margin:"4px 0 0"}}>✋ Pris en charge par {initiative.acceptedBy}</p>}
                   </div>
-                  {isKid&&!initiative.acceptedBy&&<button onClick={acceptInitiative} style={{width:"100%",background:color,color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Je prends en charge !</button>}
+                  {!initiative.acceptedBy&&<button onClick={acceptInitiative} style={{width:"100%",background:color,color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Je prends en charge !</button>}
                   {initiative.acceptedBy===selectedMember&&<button onClick={completeInitiative} style={{width:"100%",background:"#10B981",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Tâche terminée ! (+2 pts)</button>}
-                  {isCouple&&<button onClick={cancelInitiative} style={{width:"100%",background:"#f5f5f7",color:"#aaa",border:"none",borderRadius:12,padding:"8px",fontWeight:600,fontSize:12,cursor:"pointer"}}>Annuler l'initiative</button>}
+                  {(isCouple||initiative.postedBy===selectedMember)&&<button onClick={cancelInitiative} style={{width:"100%",background:"#f5f5f7",color:"#aaa",border:"none",borderRadius:12,padding:"8px",fontWeight:600,fontSize:12,cursor:"pointer"}}>Annuler l'initiative</button>}
                 </div>
               )}
             </div>
@@ -565,7 +562,7 @@ export default function App(){
                 return(
                   <div key={task} onClick={()=>claimCouple(task)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7",cursor:isCouple?"pointer":"default",opacity:!isCouple?0.5:1}}>
                     <div style={{width:26,height:26,borderRadius:13,border:`2px solid ${isCouple?color+"44":"#ddd"}`,background:isCouple?`${color}22`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      {isCouple&&<svg width="10" height="10" viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="5" y1="2" x2="5" y2="8" stroke={color} strokeWidth="2" strokeLinecap="round"/></svg>}
+                      {isCouple&&<Plus color={color}/>}
                     </div>
                     <span style={{fontSize:14,color:"#1a1a2e",flex:1}}>{task}</span>
                     {timesThisWeek>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:"#DCFCE7",color:"#16A34A",fontWeight:600}}>×{timesThisWeek}</span>}
@@ -738,7 +735,7 @@ export default function App(){
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}} onClick={()=>setPhotoViewer(null)}>
           <img src={photoViewer.url} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:16,objectFit:"contain"}} alt="Preuve tâche"/>
           <button onClick={()=>setPhotoViewer(null)} style={{position:"absolute",top:20,right:20,width:40,height:40,borderRadius:20,background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",fontSize:20,cursor:"pointer"}}>✕</button>
-          <button onClick={()=>deletePhoto(photoViewer.taskKey)} style={{position:"absolute",bottom:30,left:"50%",transform:"translateX(-50%)",background:"#ef4444",color:"#fff",border:"none",borderRadius:16,padding:"12px 24px",fontWeight:700,fontSize:14,cursor:"pointer"}}>🗑️ Supprimer la photo</button>
+          <button onClick={e=>{e.stopPropagation();deletePhoto(photoViewer.taskKey);}} style={{position:"absolute",bottom:30,left:"50%",transform:"translateX(-50%)",background:"#ef4444",color:"#fff",border:"none",borderRadius:16,padding:"12px 24px",fontWeight:700,fontSize:14,cursor:"pointer"}}>🗑️ Supprimer la photo</button>
         </div>
       )}
 
@@ -841,10 +838,12 @@ export default function App(){
             </div>
             <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Code PIN (4 chiffres)</p>
             <input value={editPin} onChange={e=>setEditPin(e.target.value.replace(/\D/g,"").slice(0,4))} maxLength={4} placeholder="0000" style={{width:"100%",fontSize:20,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box",letterSpacing:8,textAlign:"center",fontFamily:"inherit"}}/>
-            {KIDS.includes(selectedMember)&&<>
-              <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Récompense challenge</p>
-              <input value={editReward} onChange={e=>setEditReward(e.target.value)} placeholder="Ex : Sortie cinéma, bonbons..." style={{width:"100%",fontSize:14,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box",fontFamily:"inherit"}}/>
-            </>}
+            {KIDS.includes(selectedMember)&&(
+              <>
+                <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Récompense challenge</p>
+                <input value={editReward} onChange={e=>setEditReward(e.target.value)} placeholder="Ex : Sortie cinéma, bonbons..." style={{width:"100%",fontSize:14,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box",fontFamily:"inherit"}}/>
+              </>
+            )}
             <button onClick={saveProfile} style={{width:"100%",background:editColor,color:"#fff",border:"none",borderRadius:16,padding:"15px",fontWeight:700,fontSize:15,cursor:"pointer"}}>Enregistrer</button>
           </div>
         </div>
