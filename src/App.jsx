@@ -6,7 +6,6 @@ const SUPABASE_STORAGE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 const ONESIGNAL_APP_ID = "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631";
 const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_API_KEY;
 
-// ── DB ──────────────────────────────────────────────────────
 async function dbGet(){
   const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
   const d=await r.json();return d[0]||null;
@@ -15,7 +14,6 @@ async function dbSet(patch){
   await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
 }
 
-// ── PHOTOS ──────────────────────────────────────────────────
 async function compressImage(file){
   return new Promise(resolve=>{
     const img=new Image();
@@ -33,7 +31,7 @@ async function compressImage(file){
   });
 }
 
-// Upload : retourne {url, path} ou null
+// Upload une photo, retourne l'URL publique ou null
 async function photoUpload(file,taskKey){
   try{
     const compressed=await compressImage(file);
@@ -45,28 +43,16 @@ async function photoUpload(file,taskKey){
       body:compressed
     });
     if(!res.ok){console.error("upload failed",await res.text());return null;}
-    return{url:`${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`,path};
+    return `${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`;
   }catch(e){console.error(e);return null;}
 }
 
-// Delete : supprime le fichier Storage
-async function photoDelete(path){
-  try{
-    await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{
-      method:"DELETE",
-      headers:{apikey:SUPABASE_STORAGE_KEY,Authorization:`Bearer ${SUPABASE_STORAGE_KEY}`}
-    });
-  }catch(e){console.error(e);}
-}
-
-// ── NOTIFICATIONS ────────────────────────────────────────────
 async function sendPushNotification(title,message){
   try{
     await fetch("https://onesignal.com/api/v1/notifications",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Key ${ONESIGNAL_API_KEY}`},body:JSON.stringify({app_id:ONESIGNAL_APP_ID,included_segments:["All"],headings:{fr:title,en:title},contents:{fr:message,en:message},url:"https://levasseur-schubert-family-chores.vercel.app"})});
   }catch(e){console.error(e);}
 }
 
-// ── CONSTANTS ────────────────────────────────────────────────
 const DOUBLE_POINTS_TASKS=["Enlever les crottes de Tabby"];
 const SHARED_DAILY=["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
 const COUPLE_POOL=["Passer l'aspirateur","Passer le mop","Faire une machine à laver","Etendre le linge","Plier le linge"];
@@ -90,7 +76,7 @@ const RULES=[
   {emoji:"⭐",title:"Initiatives",desc:"Tout le monde peut poster une tâche bonus et la réaliser pour gagner 2 points !"},
   {emoji:"🏆",title:"Challenges Michel & Gabrielle",desc:"Terminez toutes vos tâches perso dans la semaine pour débloquer votre récompense !"},
   {emoji:"⚔️",title:"Compétition",desc:"Celui qui fait le plus de tâches hebdomadaires dans la semaine gagne une récompense !"},
-  {emoji:"📸",title:"Photos de preuves",desc:"Pour chaque tâche, tu peux ajouter une photo. Tu peux aussi la supprimer et en reprendre une nouvelle !"},
+  {emoji:"📸",title:"Photos de preuves",desc:"Pour chaque tâche, tu peux ajouter une ou plusieurs photos pour prouver que c'est fait !"},
   {emoji:"💬",title:"Messagerie",desc:"Envoyez des messages à toute la famille depuis l'onglet Messages."},
   {emoji:"✏️",title:"Mon profil",desc:"Appuie sur ✏️ en haut à droite pour changer ton emoji, ta couleur et ton PIN."},
   {emoji:"😬",title:"Gages",desc:"Si Maman ou Papou fait une tâche hebdomadaire à votre place, Michel et Gabrielle ont un gage !"},
@@ -109,7 +95,7 @@ export default function App(){
   const [history,setHistory]=useState([]);
   const [points,setPoints]=useState({});
   const [rewards,setRewards]=useState(DEFAULT_REWARDS);
-  // photos = { taskKey: {url, path} }
+  // photos = { taskKey: [url1, url2, ...] }
   const [photos,setPhotos]=useState({});
   const [today,setToday]=useState(dayKey());
   const [unlockedShown,setUnlockedShown]=useState({});
@@ -138,7 +124,7 @@ export default function App(){
   const [messages,setMessages]=useState([]);
   const [newMsg,setNewMsg]=useState("");
   const [loading,setLoading]=useState(true);
-  const [photoViewer,setPhotoViewer]=useState(null); // {url, path, taskKey}
+  const [photoViewer,setPhotoViewer]=useState(null); // {urls:[...], index:0}
   const [uploadingKey,setUploadingKey]=useState(null);
   const msgEnd=useRef(null);
   const timer=useRef(null);
@@ -146,18 +132,14 @@ export default function App(){
 
   function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},msUntilMidnight()+500);}
 
-  // Normalise les photos depuis DB (ancien format string ou nouveau {url,path})
+  // Normalise les photos : accepte string, {url}, ou [url1,url2,...]
   function normalizePhotos(raw){
     if(!raw)return{};
     const out={};
     Object.entries(raw).forEach(([k,v])=>{
-      if(typeof v==="string"){
-        // ancien format : juste une URL, on reconstitue le path depuis l'URL
-        const path=v.split('/task-photos/')[1]||"";
-        out[k]={url:v,path};
-      }else if(v&&v.url){
-        out[k]=v;
-      }
+      if(typeof v==="string") out[k]=[v];
+      else if(Array.isArray(v)) out[k]=v.filter(Boolean);
+      else if(v&&v.url) out[k]=[v.url];
     });
     return out;
   }
@@ -213,48 +195,30 @@ export default function App(){
     setFirstLogin(false);setRulesPage(0);
   }
 
-  // ── PHOTO HANDLERS ──
+  // ── PHOTO HANDLER ──
   async function handlePhotoUpload(e,taskKey){
     const file=e.target.files[0];if(!file)return;
     setUploadingKey(taskKey);
-    const result=await photoUpload(file,taskKey);
-    if(result){
-      // Met à jour localement ET en DB
-      const np={...photos,[taskKey]:result};
+    const url=await photoUpload(file,taskKey);
+    if(url){
+      const existing=photos[taskKey]||[];
+      const np={...photos,[taskKey]:[...existing,url]};
       setPhotos(np);
-      // Sauvegarde en DB (sérialise correctement)
-      const dbPhotos={};
-      Object.entries(np).forEach(([k,v])=>{dbPhotos[k]=v;});
-      await dbSet({photos:dbPhotos});
+      await dbSet({photos:np});
     }
     setUploadingKey(null);
   }
 
-  async function handlePhotoDelete(taskKey,path){
-    // 1. Supprime le fichier Storage
-    await photoDelete(path);
-    // 2. Met à jour localement
-    const np={...photos};
-    delete np[taskKey];
-    // 3. Force un objet vide si plus de photos (jamais null)
-    const safePhotos=Object.keys(np).length>0?np:{};
-    setPhotos(safePhotos);
-    // 4. Met à jour en DB avec valeur explicite non-null
-    await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{
-      method:"PATCH",
-      headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},
-      body:JSON.stringify({photos:safePhotos,updated_at:new Date().toISOString()})
-    });
-    // 5. Ferme le viewer
-    setPhotoViewer(null);
-  }
-
-  // Composant bouton photo
   function PhotoBtn({taskKey}){
-    const p=photos[taskKey];
+    const urls=photos[taskKey]||[];
     return(
       <div style={{display:"flex",alignItems:"center",gap:4}} onClick={e=>e.stopPropagation()}>
-        {p&&<button onClick={()=>setPhotoViewer({url:p.url,path:p.path,taskKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>📸</button>}
+        {urls.length>0&&(
+          <button onClick={()=>setPhotoViewer({urls,index:0,taskKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+            📸
+            {urls.length>1&&<span style={{position:"absolute",top:-4,right:-4,background:"#ef4444",color:"#fff",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 4px"}}>{urls.length}</span>}
+          </button>
+        )}
         <label style={{width:28,height:28,borderRadius:8,background:"#f0f0f5",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}>
           {uploadingKey===taskKey?"⏳":"📷"}
           <input type="file" accept="image/*" capture="environment" onChange={e=>handlePhotoUpload(e,taskKey)} style={{display:"none"}}/>
@@ -264,13 +228,34 @@ export default function App(){
   }
 
   const wk=weekKey();
+
+  // ── TABLE ROULEMENT ──
   function getTableSetter(){return tableRota[wk]||null;}
   function whoSetsTableToday(){
-    const s=getTableSetter();if(!s)return null;
-    const d=new Date().getDay();const dm=(d===0?6:d-1);
-    return["Michel","Gabrielle"][(["Michel","Gabrielle"].indexOf(s)+dm)%2];
+    const setter=getTableSetter();if(!setter)return null;
+    const d=new Date().getDay();
+    // Lundi=0, Mardi=1, ... Dimanche=6
+    const daysFromMon=d===0?6:d-1;
+    const kids=["Michel","Gabrielle"];
+    const setterIdx=kids.indexOf(setter);
+    return kids[(setterIdx+daysFromMon)%2];
   }
-  function whoClearsTableToday(){const s=whoSetsTableToday();return s?(s==="Michel"?"Gabrielle":"Michel"):null;}
+  function whoClearsTableToday(){
+    const s=whoSetsTableToday();
+    return s?(s==="Michel"?"Gabrielle":"Michel"):null;
+  }
+  function getTableScheduleForWeek(){
+    const setter=getTableSetter();if(!setter)return null;
+    const kids=["Michel","Gabrielle"];
+    const setterIdx=kids.indexOf(setter);
+    const days=["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+    return days.map((day,i)=>({
+      day,
+      sets:kids[(setterIdx+i)%2],
+      clears:kids[(setterIdx+i+1)%2]
+    }));
+  }
+
   function kidsCommonCount(){
     const c={Michel:0,Gabrielle:0};
     history.filter(h=>h.weekKey===wk&&h.type==="commune"&&KIDS.includes(h.member)).forEach(h=>{c[h.member]=(c[h.member]||0)+1;});
@@ -292,6 +277,7 @@ export default function App(){
     if(COUPLE.includes(member))setGageAlert({member,task});
     sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,`${task}${pts===2?" (+2 pts)":""}`);
   }
+
   function claimCouple(task){
     if(!COUPLE.includes(selectedMember))return;
     const member=selectedMember;
@@ -300,6 +286,7 @@ export default function App(){
     setPoints(np);setHistory(nh);dbSet({points:np,history:nh});
     sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,task);
   }
+
   function togglePersonal(pm,task){
     const key=`${wk}|personal|${pm}|${task}`;
     let nd={...done},np={...points},nh;
@@ -307,6 +294,7 @@ export default function App(){
     else{nd[key]=true;np[pm]=(np[pm]||0)+1;nh=addHist({member:pm,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"perso"});sendPushNotification(`${pe(pm)} ${pm} a fait une tâche !`,task);}
     setDone(nd);setPoints(np);setHistory(nh);dbSet({done:nd,points:np,history:nh});
   }
+
   function postInitiative(){
     let label;
     if(initTask==="Ranger une pièce")label=`Ranger une pièce : ${initRoom}`;
@@ -325,12 +313,14 @@ export default function App(){
     sendPushNotification(`🏆 ${member} a terminé l'initiative !`,`${initiative.task} (+2 pts)`);
   }
   function cancelInitiative(){setInitiative(null);dbSet({initiative:null});}
+
   function sendMessage(){
     if(!newMsg.trim())return;
     const nm=[...messages,{from:selectedMember,text:newMsg.trim(),date:new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),day:new Date().toLocaleDateString("fr-FR")}].slice(-100);
     setMessages(nm);dbSet({messages:nm});setNewMsg("");
     sendPushNotification(`💬 ${selectedMember}`,newMsg.trim());
   }
+
   function nextWeek(){
     const late=Object.keys(profiles).filter(m=>{
       const personal=PERSONAL_TASKS[m]||[];
@@ -373,6 +363,9 @@ export default function App(){
     const x=map[type]||map.hebdo;return{fontSize:10,padding:"2px 7px",borderRadius:99,background:x.bg,color:x.c,fontWeight:600,whiteSpace:"nowrap"};
   };
 
+  // Calcul max points pour les barres
+  const maxPoints=Math.max(...Object.keys(profiles).map(m=>points[m]||0),1);
+
   if(loading)return(
     <div style={{minHeight:"100vh",background:"#f5f5f7",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"-apple-system,sans-serif"}}>
       <div style={{fontSize:48,marginBottom:16}}>🏠</div>
@@ -390,12 +383,16 @@ export default function App(){
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
           {Object.keys(profiles).map(m=>{
-            const c=pc(m);const e=pe(m);
+            const c=pc(m);const e=pe(m);const pts=points[m]||0;
+            const pct=maxPoints>0?Math.round((pts/maxPoints)*100):0;
             return(
               <button key={m} onClick={()=>selectMember(m)} style={{background:"#fff",border:`2px solid ${c}22`,borderRadius:22,padding:"1.5rem 1rem",cursor:"pointer",textAlign:"center",boxShadow:`0 4px 16px ${c}22`,fontFamily:"inherit"}}>
                 <div style={{width:60,height:60,borderRadius:30,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 10px"}}>{e}</div>
                 <p style={{fontWeight:700,fontSize:16,color:"#1a1a2e",margin:"0 0 4px"}}>{m}</p>
-                <p style={{fontSize:13,color:c,margin:0,fontWeight:600}}>{points[m]||0} pts</p>
+                <p style={{fontSize:13,color:c,margin:"0 0 8px",fontWeight:600}}>{pts} pts</p>
+                <div style={{height:5,borderRadius:3,background:`${c}22`,overflow:"hidden"}}>
+                  <div style={{height:"100%",borderRadius:3,background:c,width:`${pct}%`,transition:"width 0.4s"}}/>
+                </div>
               </button>
             );
           })}
@@ -435,6 +432,10 @@ export default function App(){
       </div>
     </div>
   );
+
+  const setter=whoSetsTableToday();
+  const clearer=whoClearsTableToday();
+  const tableSchedule=getTableScheduleForWeek();
 
   return(
     <div style={{minHeight:"100vh",background:"#f5f5f7",display:"flex",flexDirection:"column",alignItems:"center",fontFamily:"-apple-system,sans-serif"}}>
@@ -492,11 +493,11 @@ export default function App(){
             })}
           </div>
 
-          {/* Michel vs Gabrielle */}
+          {/* Michel vs Gabrielle + Table */}
           {(()=>{
             const counts=kidsCommonCount();
             const mS=counts["Michel"]||0;const gS=counts["Gabrielle"]||0;const total=mS+gS||1;
-            const setter=whoSetsTableToday();
+            const todayDayIdx=new Date().getDay()===0?6:new Date().getDay()-1;
             return(
               <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
                 <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:"0 0 10px"}}>⚔️ Michel vs Gabrielle</p>
@@ -509,18 +510,46 @@ export default function App(){
                   <span style={{fontSize:13,fontWeight:700,color:pc("Gabrielle"),minWidth:54,textAlign:"right"}}>{gS} {pe("Gabrielle")}</span>
                 </div>
                 <p style={{fontSize:11,color:"#aaa",textAlign:"center",margin:"0 0 12px"}}>Tâches hebdomadaires · récompense au meilleur !</p>
+
+                {/* Roulement table */}
                 <div style={{borderTop:"1px solid #f5f5f7",paddingTop:10}}>
-                  <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>🍽️ Table aujourd'hui</p>
-                  {!getTableSetter()?<p style={{fontSize:12,color:"#aaa",margin:0}}>Le 1er enfant à mettre la table ce lundi définit le roulement.</p>:(
-                    <div style={{display:"flex",gap:8}}>
-                      {[{kid:"Michel",role:setter==="Michel"?"Mettre la table":"Débarrasser"},{kid:"Gabrielle",role:setter==="Gabrielle"?"Mettre la table":"Débarrasser"}].map(({kid,role})=>(
-                        <div key={kid} style={{flex:1,background:`${pc(kid)}12`,borderRadius:14,padding:"8px",textAlign:"center"}}>
-                          <div style={{fontSize:20}}>{pe(kid)}</div>
-                          <p style={{fontSize:12,fontWeight:700,color:pc(kid),margin:"3px 0 1px"}}>{kid}</p>
-                          <p style={{fontSize:11,color:"#888",margin:0}}>{role}</p>
-                        </div>
-                      ))}
+                  <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>🍽️ Table cette semaine</p>
+                  {!getTableSetter()?(
+                    <div style={{background:"#FEF9C3",borderRadius:12,padding:"10px",textAlign:"center"}}>
+                      <p style={{fontSize:13,color:"#A16207",fontWeight:600,margin:0}}>⚠️ En attente du premier lundi</p>
+                      <p style={{fontSize:12,color:"#aaa",margin:"4px 0 0"}}>Le 1er enfant à mettre la table lundi définit le roulement</p>
                     </div>
+                  ):(
+                    <>
+                      {/* Aujourd'hui en évidence */}
+                      <div style={{display:"flex",gap:8,marginBottom:10}}>
+                        <div style={{flex:1,background:`${pc(setter)}15`,borderRadius:14,padding:"10px",textAlign:"center",border:`2px solid ${pc(setter)}33`}}>
+                          <p style={{fontSize:11,color:"#888",margin:"0 0 2px"}}>Aujourd'hui — met la table</p>
+                          <div style={{fontSize:22}}>{pe(setter)}</div>
+                          <p style={{fontSize:13,fontWeight:700,color:pc(setter),margin:"2px 0 0"}}>{setter}</p>
+                        </div>
+                        <div style={{flex:1,background:`${pc(clearer)}15`,borderRadius:14,padding:"10px",textAlign:"center",border:`2px solid ${pc(clearer)}33`}}>
+                          <p style={{fontSize:11,color:"#888",margin:"0 0 2px"}}>Aujourd'hui — débarrasse</p>
+                          <div style={{fontSize:22}}>{pe(clearer)}</div>
+                          <p style={{fontSize:13,fontWeight:700,color:pc(clearer),margin:"2px 0 0"}}>{clearer}</p>
+                        </div>
+                      </div>
+                      {/* Planning semaine */}
+                      {tableSchedule&&(
+                        <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:4}}>
+                          {tableSchedule.map(({day,sets},i)=>{
+                            const isToday=i===todayDayIdx;
+                            const c=pc(sets);
+                            return(
+                              <div key={day} style={{flex:"0 0 auto",textAlign:"center",padding:"6px 8px",borderRadius:10,background:isToday?`${c}22`:"#f9f9f9",border:isToday?`1.5px solid ${c}`:"1px solid #eee",minWidth:44}}>
+                                <p style={{fontSize:10,color:isToday?c:"#aaa",fontWeight:isToday?700:400,margin:"0 0 2px"}}>{day}</p>
+                                <p style={{fontSize:11,fontWeight:700,color:c,margin:0}}>{sets.slice(0,3)}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -536,9 +565,7 @@ export default function App(){
             {!initiative&&!showInitiativeForm&&<p style={{fontSize:13,color:"#aaa",margin:0}}>Aucune initiative en cours.</p>}
             {showInitiativeForm&&(
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                <select value={initTask} onChange={e=>setInitTask(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>
-                  {INITIATIVE_TASKS.map(t=><option key={t}>{t}</option>)}
-                </select>
+                <select value={initTask} onChange={e=>setInitTask(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>{INITIATIVE_TASKS.map(t=><option key={t}>{t}</option>)}</select>
                 {initTask==="Ranger une pièce"&&<select value={initRoom} onChange={e=>setInitRoom(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>{ROOMS.map(r=><option key={r}>{r}</option>)}</select>}
                 {initTask==="Autre (décrire)"&&<input value={initCustom} onChange={e=>setInitCustom(e.target.value)} placeholder="Décris la tâche..." style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa",fontFamily:"inherit"}}/>}
                 <div style={{display:"flex",gap:8}}>
@@ -649,7 +676,7 @@ export default function App(){
             <p style={{fontWeight:700,fontSize:16,color:"#1a1a2e",margin:"0 0 16px"}}>Classement familial 🏅</p>
             {Object.keys(profiles).sort((a,b)=>(points[b]||0)-(points[a]||0)).map((m,i)=>{
               const c=pc(m);const e=pe(m);const pts=points[m]||0;
-              const max=Math.max(...Object.keys(profiles).map(x=>points[x]||0),1);
+              const pct=maxPoints>0?Math.round((pts/maxPoints)*100):0;
               return(
                 <div key={m} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:"1px solid #f5f5f7"}}>
                   <span style={{fontSize:18,fontWeight:700,width:26,color:"#ccc",textAlign:"center"}}>{i+1}</span>
@@ -660,7 +687,7 @@ export default function App(){
                       <span style={{fontSize:13,fontWeight:700,color:c}}>{pts} pts</span>
                     </div>
                     <div style={{height:5,borderRadius:3,background:"#f0f0f5"}}>
-                      <div style={{height:"100%",borderRadius:3,background:c,width:`${(pts/max)*100}%`,transition:"width 0.4s"}}/>
+                      <div style={{height:"100%",borderRadius:3,background:c,width:`${pct}%`,transition:"width 0.4s"}}/>
                     </div>
                   </div>
                 </div>
@@ -681,8 +708,7 @@ export default function App(){
               {filteredHist.map((h,i)=>{
                 const c=pc(h.member);const e=pe(h.member);
                 const photoKey=h.type==="commune"?`${h.dayKey}|shared|${h.task}`:h.type==="couple"?`${h.weekKey}|couple|${h.task}`:`${h.weekKey}|personal|${h.member}|${h.task}`;
-                const photoData=photos[photoKey];
-                const photoUrl=photoData?(typeof photoData==="string"?photoData:photoData.url):null;
+                const photoUrls=photos[photoKey]||[];
                 return(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
                     <div style={{width:34,height:34,borderRadius:17,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{e}</div>
@@ -691,7 +717,9 @@ export default function App(){
                       <p style={{fontSize:12,color:"#888",margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{h.task}</p>
                     </div>
                     <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                      {photoUrl&&<button onClick={()=>setPhotoViewer({url:photoUrl,path:photoData?.path||"",taskKey:photoKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14}}>📸</button>}
+                      {photoUrls.length>0&&<button onClick={()=>setPhotoViewer({urls:photoUrls,index:0,taskKey:photoKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,position:"relative"}}>
+                        📸{photoUrls.length>1&&<span style={{position:"absolute",top:-4,right:-4,background:"#ef4444",color:"#fff",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 4px"}}>{photoUrls.length}</span>}
+                      </button>}
                       <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
                         <span style={typeBadge(h.type)}>{h.type}</span>
                         <span style={{fontSize:11,color:"#bbb"}}>{h.date}</span>
@@ -744,12 +772,18 @@ export default function App(){
         </div>
       </div>
 
-      {/* Photo viewer avec suppression */}
+      {/* Photo viewer multi-photos */}
       {photoViewer&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.9)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}}>
           <button onClick={()=>setPhotoViewer(null)} style={{position:"absolute",top:20,right:20,width:40,height:40,borderRadius:20,background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",fontSize:20,cursor:"pointer"}}>✕</button>
-          <img src={photoViewer.url} style={{maxWidth:"100%",maxHeight:"75vh",borderRadius:16,objectFit:"contain"}} alt="Preuve tâche"/>
-          <button onClick={()=>handlePhotoDelete(photoViewer.taskKey,photoViewer.path)} style={{marginTop:20,background:"#ef4444",color:"#fff",border:"none",borderRadius:16,padding:"12px 28px",fontWeight:700,fontSize:15,cursor:"pointer"}}>🗑️ Supprimer</button>
+          <img src={photoViewer.urls[photoViewer.index]} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:16,objectFit:"contain"}} alt="Preuve"/>
+          {photoViewer.urls.length>1&&(
+            <div style={{display:"flex",alignItems:"center",gap:16,marginTop:16}}>
+              <button onClick={()=>setPhotoViewer(v=>({...v,index:Math.max(0,v.index-1)}))} disabled={photoViewer.index===0} style={{width:40,height:40,borderRadius:20,background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",fontSize:20,cursor:"pointer",opacity:photoViewer.index===0?0.3:1}}>←</button>
+              <span style={{color:"#fff",fontSize:13}}>{photoViewer.index+1} / {photoViewer.urls.length}</span>
+              <button onClick={()=>setPhotoViewer(v=>({...v,index:Math.min(v.urls.length-1,v.index+1)}))} disabled={photoViewer.index===photoViewer.urls.length-1} style={{width:40,height:40,borderRadius:20,background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",fontSize:20,cursor:"pointer",opacity:photoViewer.index===photoViewer.urls.length-1?0.3:1}}>→</button>
+            </div>
+          )}
         </div>
       )}
 
