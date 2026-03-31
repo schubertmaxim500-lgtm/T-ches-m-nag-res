@@ -25,17 +25,17 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-    <script>
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      OneSignalDeferred.push(async function(OneSignal) {
-        await OneSignal.init({
-          appId: "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631",
-          notifyButton: { enable: false },
-          promptOptions: { slidedown: { prompts: [{ type: "push", autoPrompt: true, text: { actionMessage: "FamilyChores souhaite vous envoyer des notifications", acceptButton: "Autoriser", cancelButton: "Plus tard" } }] } }
-        });
-      });
-    </script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631",
+      serviceWorkerParam: { scope: "/" },
+      serviceWorkerPath: "OneSignalSDKWorker.js"
+    });
+    await OneSignal.Notifications.requestPermission();
+  });
+</script>
   </body>
 </html>
