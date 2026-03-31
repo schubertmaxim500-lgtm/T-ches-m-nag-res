@@ -12,11 +12,29 @@ async function dbGet(){
 async function dbSet(patch){
   await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
 }
+async function compressImage(file){
+  return new Promise((resolve)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const canvas=document.createElement("canvas");
+      const max=1024;
+      let w=img.width,h=img.height;
+      if(w>h){if(w>max){h=h*(max/w);w=max;}}else{if(h>max){w=w*(max/h);h=max;}}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext("2d").drawImage(img,0,0,w,h);
+      canvas.toBlob(blob=>resolve(new File([blob],file.name,{type:"image/jpeg"})),"image/jpeg",0.7);
+      URL.revokeObjectURL(url);
+    };
+    img.src=url;
+  });
+}
+
 async function uploadPhoto(file,key){
-  const ext=file.name.split('.').pop();
+  const compressed=await compressImage(file);
   const safeName=key.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
-  const path=`${safeName}.${ext}`;
-  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":file.type,"x-upsert":"true"},body:file});
+  const path=`${safeName}.jpg`;
+  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"image/jpeg","x-upsert":"true"},body:compressed});
   if(!res.ok){console.error("Upload failed",await res.text());return null;}
   return `${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`;
 }
