@@ -32,11 +32,11 @@ async function compressImage(file){
 async function uploadPhoto(file,key){
   const compressed=await compressImage(file);
   const safeName=key.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
-  const timestamp=Date.now();
-  const path=`${safeName}_${timestamp}.jpg`;
-  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"image/jpeg","x-upsert":"true"},body:compressed});
+  const path=`${safeName}_${Date.now()}.jpg`;
+  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"image/jpeg"},body:compressed});
   if(!res.ok){console.error("Upload failed",await res.text());return null;}
-  return `${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`;
+  const url=`${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`;
+  return {url,path};
 }
 async function sendPushNotification(title,message){
   try{
@@ -203,12 +203,12 @@ export default function App(){
     const file=e.target.files[0];if(!file)return;
     setUploadingKey(taskKey);
     try{
-      const url=await uploadPhoto(file,taskKey);
-      if(url){
-        const np={...photos,[taskKey]:url};
+      const result=await uploadPhoto(file,taskKey);
+      if(result){
+        // Stocke url ET path pour pouvoir supprimer correctement
+        const np={...photos,[taskKey]:{url:result.url,path:result.path}};
         setPhotos(np);
         await dbSet({photos:np});
-        await loadFromDB();
       }
     }catch(err){console.error(err);}
     setUploadingKey(null);
@@ -216,22 +216,28 @@ export default function App(){
 
   async function deletePhoto(taskKey){
     try{
-      const photoUrl=photos[taskKey];
-      if(photoUrl){
-        const fileName=photoUrl.split('/').pop();
-        await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${fileName}`,{method:"DELETE",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
+      const photoData=photos[taskKey];
+      if(photoData){
+        const path=typeof photoData==="string"?photoData.split('/').pop():photoData.path;
+        await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{method:"DELETE",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
       }
       const np={...photos};
       delete np[taskKey];
       setPhotos(np);
       await dbSet({photos:np});
-      await loadFromDB();
     }catch(e){console.error(e);}
     setPhotoViewer(null);
   }
 
+  function getPhotoUrl(taskKey){
+    const p=photos[taskKey];
+    if(!p)return null;
+    if(typeof p==="string")return p;
+    return p.url;
+  }
+
   function TaskPhotoButton({taskKey}){
-    const photoUrl=photos[taskKey];
+    const photoUrl=getPhotoUrl(taskKey);
     return(
       <div style={{display:"flex",alignItems:"center",gap:4}}>
         {photoUrl&&(
@@ -675,7 +681,7 @@ export default function App(){
               {filteredHist.map((h,i)=>{
                 const c=pc(h.member);const e=pe(h.member);
                 const photoKey=h.type==="commune"?`${h.dayKey}|shared|${h.task}`:h.type==="couple"?`${h.weekKey}|couple|${h.task}`:`${h.weekKey}|personal|${h.member}|${h.task}`;
-                const photoUrl=photos[photoKey];
+                const photoUrl=getPhotoUrl(photoKey);
                 return(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}>
                     <div style={{width:34,height:34,borderRadius:17,background:`${c}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{e}</div>
@@ -684,8 +690,7 @@ export default function App(){
                       <p style={{fontSize:12,color:"#888",margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{h.task}</p>
                     </div>
                     <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                      {photoUrl&&<button onClick={()=>setPhotoViewer({url:photoUrl,taskKey:photoKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14}}>📸</button>}
-                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+                      {photoUrl&&<button onClick={()=>setPhotoViewer({url:photoUrl,taskKey:photoKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14}}>📸</button>}                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
                         <span style={typeBadgeStyle(h.type)}>{h.type}</span>
                         <span style={{fontSize:11,color:"#bbb"}}>{h.date}</span>
                       </div>
