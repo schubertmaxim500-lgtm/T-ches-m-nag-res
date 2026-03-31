@@ -216,10 +216,16 @@ export default function App(){
 
   async function deletePhoto(taskKey){
     try{
-      const safeName=taskKey.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
-      await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${safeName}.jpg`,{method:"DELETE",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
-      const np={...photos};delete np[taskKey];
-      setPhotos(np);await dbSet({photos:np});
+      const photoUrl=photos[taskKey];
+      if(photoUrl){
+        const fileName=photoUrl.split('/').pop();
+        await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${fileName}`,{method:"DELETE",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
+      }
+      const np={...photos};
+      delete np[taskKey];
+      setPhotos(np);
+      await dbSet({photos:np});
+      await loadFromDB();
     }catch(e){console.error(e);}
     setPhotoViewer(null);
   }
