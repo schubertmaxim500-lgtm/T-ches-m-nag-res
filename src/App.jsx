@@ -217,7 +217,15 @@ export default function App(){
     setUploadingKey(null);
   }
 
-  function TaskPhotoButton({taskKey}){
+  async function deletePhoto(taskKey){
+    try{
+      const safeName=taskKey.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
+      await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${safeName}.jpg`,{method:"DELETE",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
+      const np={...photos};delete np[taskKey];
+      setPhotos(np);await dbSet({photos:np});
+    }catch(e){console.error(e);}
+    setPhotoViewer(null);
+  }
     const photoUrl=photos[taskKey];
     return(
       <div style={{display:"flex",alignItems:"center",gap:4}}>
@@ -672,7 +680,7 @@ export default function App(){
                       <p style={{fontSize:12,color:"#888",margin:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{h.task}</p>
                     </div>
                     <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                      {photoUrl&&<button onClick={()=>setPhotoViewer(photoUrl)} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14}}>📸</button>}
+                      {photoUrl&&<button onClick={()=>setPhotoViewer({url:photoUrl,taskKey:photoKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14}}>📸</button>}
                       <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
                         <span style={typeBadgeStyle(h.type)}>{h.type}</span>
                         <span style={{fontSize:11,color:"#bbb"}}>{h.date}</span>
@@ -728,8 +736,9 @@ export default function App(){
       {/* Photo viewer */}
       {photoViewer&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}} onClick={()=>setPhotoViewer(null)}>
-          <img src={photoViewer} style={{maxWidth:"100%",maxHeight:"90vh",borderRadius:16,objectFit:"contain"}} alt="Preuve tâche"/>
+          <img src={photoViewer.url} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:16,objectFit:"contain"}} alt="Preuve tâche"/>
           <button onClick={()=>setPhotoViewer(null)} style={{position:"absolute",top:20,right:20,width:40,height:40,borderRadius:20,background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",fontSize:20,cursor:"pointer"}}>✕</button>
+          <button onClick={()=>deletePhoto(photoViewer.taskKey)} style={{position:"absolute",bottom:30,left:"50%",transform:"translateX(-50%)",background:"#ef4444",color:"#fff",border:"none",borderRadius:16,padding:"12px 24px",fontWeight:700,fontSize:14,cursor:"pointer"}}>🗑️ Supprimer la photo</button>
         </div>
       )}
 
