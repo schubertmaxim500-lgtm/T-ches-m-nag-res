@@ -180,7 +180,15 @@ export default function App(){
     return out;
   }
 
- async function loadFromDB(){
+ 
+    // Charge les photos depuis la table dédiée fc_photos
+    const np=await dbLoadPhotos(weekKey());
+    setPhotos(np);
+    photosRef.current=np;
+  }catch(e){console.error(e);}
+  setLoading(false);
+}
+async function loadFromDB(){
   try{
     const d=await dbGet();
     if(d){
@@ -194,13 +202,6 @@ export default function App(){
       setMessages(d.messages||[]);
       setUnlockedShown(d.unlocked||{});
     }
-    // Charge les photos depuis la table dédiée fc_photos
-    const np=await dbLoadPhotos(weekKey());
-    setPhotos(np);
-    photosRef.current=np;
-  }catch(e){console.error(e);}
-  setLoading(false);
-}
 
   useEffect(()=>{
     scheduleMidnight();
