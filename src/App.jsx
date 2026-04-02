@@ -42,28 +42,28 @@ async function imageToBase64(file) {
   });
 }
 
-async function handlePhotoUpload(e, taskKey) {
+async function handlePhotoUpload(e, taskKey){
   const file = e.target.files[0];
-  if (!file) { alert("Aucun fichier sélectionné"); return; }
-  alert(`Fichier détecté : ${file.name} / ${file.type} / ${Math.round(file.size/1024)}KB`);
+  if(!file){ setUploadingKey("ERR:aucun fichier"); return; }
+  setUploadingKey(`ERR:${file.name}|${file.type}|${Math.round(file.size/1024)}KB`);
+  await new Promise(r => setTimeout(r, 3000)); // pause 3s pour lire
   setUploadingKey(taskKey);
-  try {
-    if (file.size > 10 * 1024 * 1024) {
-      alert("Photo trop lourde (max 10MB).");
-      setUploadingKey(null);
-      return;
-    }
+  try{
     const base64 = await imageToBase64(file);
-    alert(`base64 obtenu : ${base64 ? base64.slice(0,30)+"..." : "VIDE"}`);
-    if (!base64) throw new Error("base64 vide");
+    setUploadingKey(`ERR:base64=${base64 ? "OK" : "VIDE"}`);
+    await new Promise(r => setTimeout(r, 3000));
+    if(!base64) throw new Error("base64 vide");
     const existing = Array.isArray(photos[taskKey]) ? photos[taskKey] : [];
-    const np = { ...photos, [taskKey]: [...existing, base64] };
+    const np = {...photos, [taskKey]: [...existing, base64]};
     setPhotos(np);
-    alert(`Envoi vers Supabase... taskKey: ${taskKey}`);
-    await dbSet({ photos: np });
-    alert("Sauvegarde OK !");
-  } catch (err) {
-    alert("ERREUR : " + err.message);
+    setUploadingKey(`ERR:envoi Supabase...`);
+    await new Promise(r => setTimeout(r, 3000));
+    await dbSet({photos: np});
+    setUploadingKey(`ERR:SAUVEGARDE OK`);
+    await new Promise(r => setTimeout(r, 3000));
+  } catch(err){
+    setUploadingKey(`ERR:${err.message}`);
+    await new Promise(r => setTimeout(r, 5000));
   }
   setUploadingKey(null);
 }
