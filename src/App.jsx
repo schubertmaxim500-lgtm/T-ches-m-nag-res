@@ -22,6 +22,7 @@ async function dbSet(patch){
     // Affiche l'erreur dans le bandeau statut
     throw new Error(`Supabase ${response.status}: ${err}`);
   }
+}
 async function imageToBase64(file){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
