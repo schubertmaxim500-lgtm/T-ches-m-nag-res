@@ -1,29 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 const SUPABASE_URL = "https://nbxiydhjlhjvuaggaxve.supabase.co";
-const SUPABASE_KEY = "sb_publishable_Re31HJlpQz46zZxTc6l_VA_IxTCCfoa";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ieGl5ZGhqbGhqdnVhZ2dheHZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDkyODQsImV4cCI6MjA5MDMyNTI4NH0.W8iP9cfhp-6kxopZ4-qI5YnwTceDW1Ymatodx5BvEgQ";
+const SUPABASE_BUCKET = "task-photos";
 const ONESIGNAL_APP_ID = "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631";
 const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_API_KEY;
 
-async function dbSet(patch){
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{
-    method:"PATCH",
-    headers:{
-      apikey:SUPABASE_KEY,
-      Authorization:`Bearer ${SUPABASE_KEY}`,
-      "Content-Type":"application/json",
-      Prefer:"return=minimal"
-    },
-    body:JSON.stringify({...patch,updated_at:new Date().toISOString()})
-  });
-  if(!response.ok){
-    const err = await response.text();
-    console.error("dbSet error:", response.status, err);
-    // Affiche l'erreur dans le bandeau statut
-    throw new Error(`Supabase ${response.status}: ${err}`);
-  }
+async function dbGet(){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
+  const d=await r.json();return d[0]||null;
 }
-async function imageToBase64(file){
+async function dbSet(patch){
+  const response=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
+  if(!response.ok){const err=await response.text();throw new Error(`Supabase ${response.status}: ${err}`);}
+}
+
+// Upload fichier image vers Supabase Storage, retourne l'URL publique
+async function uploadPhotoToStorage(file){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
     reader.onerror=()=>reject(new Error("FileReader failed"));
@@ -33,14 +26,25 @@ async function imageToBase64(file){
       img.onload=()=>{
         try{
           const canvas=document.createElement("canvas");
-          const max=600;let w=img.width,h=img.height;
+          const max=800;let w=img.width,h=img.height;
           if(w>h){if(w>max){h=Math.round(h*(max/w));w=max;}}else{if(h>max){w=Math.round(w*(max/h));h=max;}}
           canvas.width=Math.max(w,1);canvas.height=Math.max(h,1);
           const ctx=canvas.getContext("2d");
           ctx.drawImage(img,0,0,canvas.width,canvas.height);
-          const data=canvas.toDataURL("image/jpeg",0.5);
-          if(!data||data==="data:,")reject(new Error("Canvas empty"));
-          else resolve(data);
+          canvas.toBlob(async(blob)=>{
+            if(!blob){reject(new Error("Canvas toBlob failed"));return;}
+            try{
+              const filename=`photo_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+              const uploadRes=await fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${filename}`,{
+                method:"POST",
+                headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"image/jpeg","x-upsert":"true"},
+                body:blob
+              });
+              if(!uploadRes.ok){const e=await uploadRes.text();reject(new Error(`Upload ${uploadRes.status}: ${e}`));return;}
+              const publicUrl=`${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${filename}`;
+              resolve(publicUrl);
+            }catch(err){reject(err);}
+          },"image/jpeg",0.7);
         }catch(err){reject(err);}
       };
       setTimeout(()=>{img.src=e.target.result;},0);
@@ -243,38 +247,37 @@ export default function App(){
   }
 
   // Utilise useCallback pour stabiliser la référence — évite de remonter PhotoButton
- const handlePhotoUpload=useCallback(async(file, taskKey)=>{
-  if(!file)return;
-  setUploadingKeys(prev=>({...prev,[taskKey]:true}));
-  setUploadStatus("Traitement...");
-  try{
-    if(file.size>15*1024*1024){
-      setUploadStatus("❌ Photo trop lourde");
+  const handlePhotoUpload=useCallback(async(file, taskKey)=>{
+    if(!file)return;
+    setUploadingKeys(prev=>({...prev,[taskKey]:true}));
+    setUploadStatus("Upload en cours...");
+    try{
+      if(file.size>50*1024*1024){
+        setUploadStatus("❌ Photo trop lourde (max 50MB)");
+        setTimeout(()=>setUploadStatus(""),3000);
+        setUploadingKeys(prev=>({...prev,[taskKey]:false}));
+        return;
+      }
+      const photoUrl=await uploadPhotoToStorage(file);
+      setUploadStatus("Sauvegarde...");
+      let np;
+      setPhotos(prev=>{
+        const existing=Array.isArray(prev[taskKey])?prev[taskKey]:[];
+        np={...prev,[taskKey]:[...existing,photoUrl]};
+        photosRef.current=np;
+        return np;
+      });
+      await dbSet({photos:photosRef.current});
+      setUploadStatus("✅ Photo ajoutée !");
       setTimeout(()=>setUploadStatus(""),3000);
-      setUploadingKeys(prev=>({...prev,[taskKey]:false}));
-      return;
+    }catch(err){
+      console.error("Photo error:",err);
+      setUploadStatus("❌ Erreur: "+err.message);
+      setTimeout(()=>setUploadStatus(""),5000);
     }
-    const base64=await imageToBase64(file);
-    if(!base64)throw new Error("Conversion échouée");
-    setUploadStatus("Sauvegarde...");
-    // Lire directement le state via setter fonctionnel pour avoir la valeur courante
-    let np;
-    setPhotos(prev=>{
-      const existing=Array.isArray(prev[taskKey])?prev[taskKey]:[];
-      np={...prev,[taskKey]:[...existing,base64]};
-      photosRef.current=np;
-      return np;
-    });
-    await dbSet({photos:photosRef.current});
-    setUploadStatus("✅ Photo ajoutée !");
-    setTimeout(()=>setUploadStatus(""),3000);
-  }catch(err){
-    console.error("Photo error:",err);
-    setUploadStatus("❌ Erreur: "+err.message);
-    setTimeout(()=>setUploadStatus(""),5000);
-  }
-  setUploadingKeys(prev=>({...prev,[taskKey]:false}));
-},[]);
+    setUploadingKeys(prev=>({...prev,[taskKey]:false}));
+  },[]);
+
   const handleViewPhoto=useCallback((urls, taskKey)=>{
     setPhotoViewer({urls,index:0,taskKey});
   },[]);
