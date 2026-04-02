@@ -45,24 +45,23 @@ async function imageToBase64(file) {
 async function handlePhotoUpload(e, taskKey){
   const file = e.target.files[0];
   if(!file){ setUploadingKey("ERR:aucun fichier"); return; }
-  setUploadingKey(`ERR:${file.name}|${file.type}|${Math.round(file.size/1024)}KB`);
+  setUploadingKey(`FICHIER:${file.name}|${file.type}|${Math.round(file.size/1024)}KB`);
   await new Promise(r => setTimeout(r, 3000));
-  setUploadingKey(taskKey);
   try{
     const base64 = await imageToBase64(file);
-    setUploadingKey(`ERR:base64=${base64 ? "OK" : "VIDE"}`);
+    setUploadingKey(`BASE64:${base64 ? "OK" : "VIDE"}`);
     await new Promise(r => setTimeout(r, 3000));
     if(!base64) throw new Error("base64 vide");
     const existing = Array.isArray(photos[taskKey]) ? photos[taskKey] : [];
     const np = {...photos, [taskKey]: [...existing, base64]};
     setPhotos(np);
-    setUploadingKey(`ERR:envoi Supabase...`);
+    setUploadingKey(`SUPABASE:envoi...`);
     await new Promise(r => setTimeout(r, 3000));
     await dbSet({photos: np});
-    setUploadingKey(`ERR:SAUVEGARDE OK`);
+    setUploadingKey(`OK:sauvegarde reussie`);
     await new Promise(r => setTimeout(r, 3000));
   } catch(err){
-    setUploadingKey(`ERR:${err.message}`);
+    setUploadingKey(`ERREUR:${err.message}`);
     await new Promise(r => setTimeout(r, 5000));
   }
   setUploadingKey(null);
@@ -228,14 +227,18 @@ export default function App(){
 
 function PhotoBtn({taskKey}){
   return(
-    <input
-      type="file"
-      accept="image/*"
-      onChange={e=>{
-        alert("onChange déclenché !");
-        handlePhotoUpload(e,taskKey);
-      }}
-    />
+    <div onClick={e=>e.stopPropagation()}>
+      <input
+        type="file"
+        accept="image/*"
+        onChange={e=>{
+          handlePhotoUpload(e,taskKey);
+        }}
+      />
+      <div style={{fontSize:11,color:"red",maxWidth:120,wordBreak:"break-all"}}>
+        {uploadingKey||"en attente"}
+      </div>
+    </div>
   );
 }
 
