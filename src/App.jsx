@@ -10,42 +10,61 @@ async function dbGet(){
   const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
   const d=await r.json();return d[0]||null;
 }
-async function dbSet(patch){
-  await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
-}
-
-// Convertit une image en base64 compressée
-async function imageToBase64(file){
-  return new Promise((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onload=e=>{
-      const img=new Image();
-      img.onload=()=>{
-        try{
-          const canvas=document.createElement("canvas");
-          const max=600;let w=img.width,h=img.height;
-          if(w>h){if(w>max){h=Math.round(h*(max/w));w=max;}}else{if(h>max){w=Math.round(w*(max/h));h=max;}}
-          canvas.width=w;canvas.height=h;
-          const ctx=canvas.getContext("2d");
-          ctx.drawImage(img,0,0,w,h);
-          const data=canvas.toDataURL("image/jpeg",0.5);
-          resolve(data);
-        }catch(err){reject(err);}
+async function imageToBase64(file) {
+  return new Promise((resolve, reject) => {
+    // Forcer la conversion en blob JPEG si HEIC ou autre format exotique
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("FileReader failed"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Image load failed"));
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          const max = 600;
+          let w = img.width, h = img.height;
+          if (w > h) { if (w > max) { h = Math.round(h * (max / w)); w = max; } }
+          else { if (h > max) { w = Math.round(w * (max / h)); h = max; } }
+          // Sécurité : éviter canvas 0x0
+          canvas.width = Math.max(w, 1);
+          canvas.height = Math.max(h, 1);
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const data = canvas.toDataURL("image/jpeg", 0.5);
+          if (!data || data === "data:,") reject(new Error("Canvas empty"));
+          else resolve(data);
+        } catch (err) { reject(err); }
       };
-      img.onerror=reject;
-      img.src=e.target.result;
+      // Délai minimal pour Safari Mobile
+      setTimeout(() => { img.src = e.target.result; }, 0);
     };
-    reader.onerror=reject;
     reader.readAsDataURL(file);
   });
 }
 
-async function sendPushNotification(title,message){
-  try{
-    await fetch("https://onesignal.com/api/v1/notifications",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Key ${ONESIGNAL_API_KEY}`},body:JSON.stringify({app_id:ONESIGNAL_APP_ID,included_segments:["All"],headings:{fr:title,en:title},contents:{fr:message,en:message},url:"https://levasseur-schubert-family-chores.vercel.app"})});
-  }catch(e){console.error(e);}
+async function handlePhotoUpload(e, taskKey) {
+  const file = e.target.files[0];
+  if (!file) return;
+  setUploadingKey(taskKey);
+  try {
+    // Vérification taille (max 10MB brut)
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Photo trop lourde (max 10MB).");
+      setUploadingKey(null);
+      return;
+    }
+    const base64 = await imageToBase64(file);
+    if (!base64) throw new Error("base64 vide");
+    const existing = Array.isArray(photos[taskKey]) ? photos[taskKey] : [];
+    const np = { ...photos, [taskKey]: [...existing, base64] };
+    setPhotos(np);
+    await dbSet({ photos: np });
+  } catch (err) {
+    console.error("Photo error:", err);
+    alert("Erreur lors de l'ajout de la photo : " + err.message);
+  }
+  setUploadingKey(null);
 }
-
 const DOUBLE_POINTS_TASKS=["Enlever les crottes de Tabby"];
 const SHARED_DAILY=["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
 const COUPLE_POOL=["Passer l'aspirateur","Passer le mop","Faire une machine à laver","Etendre le linge","Plier le linge"];
