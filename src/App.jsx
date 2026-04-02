@@ -10,32 +10,36 @@ async function dbGet(){
   const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
   const d=await r.json();return d[0]||null;
 }
-async function dbSet(patch){
-  const response=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
-  if(!response.ok){const err=await response.text();throw new Error(`Supabase ${response.status}: ${err}`);}
+async function dbAddPhoto(taskKey, weekKey, photoUrl){
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/fc_photos`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal"
+    },
+    body: JSON.stringify({ task_key: taskKey, week_key: weekKey, photo_url: photoUrl })
+  });
+  if(!response.ok){ const err = await response.text(); throw new Error(`Supabase ${response.status}: ${err}`); }
 }
 
-// Upload fichier image vers Supabase Storage, retourne l'URL publique
-async function uploadPhotoToStorage(file){
-  return new Promise((resolve, reject)=>{
-    const filename = `photo_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-    fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${filename}`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": file.type || "image/jpeg",
-        "x-upsert": "true"
-      },
-      body: file
-    })
-    .then(res => {
-      if(!res.ok) return res.text().then(e => reject(new Error(`Upload ${res.status}: ${e}`)));
-      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${filename}`;
-      resolve(publicUrl);
-    })
-    .catch(reject);
+async function dbLoadPhotos(weekKey){
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/fc_photos?week_key=eq.${weekKey}&order=created_at.asc`, {
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`
+    }
   });
+  if(!response.ok){ const err = await response.text(); throw new Error(`Supabase ${response.status}: ${err}`); }
+  const rows = await response.json();
+  // Regroupe par task_key → { "task_abc": ["url1", "url2"], ... }
+  const result = {};
+  for(const row of rows){
+    if(!result[row.task_key]) result[row.task_key] = [];
+    result[row.task_key].push(row.photo_url);
+  }
+  return result;
 }
 async function sendPushNotification(title,message){
   try{
