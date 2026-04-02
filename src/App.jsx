@@ -44,24 +44,26 @@ async function imageToBase64(file) {
 
 async function handlePhotoUpload(e, taskKey) {
   const file = e.target.files[0];
-  if (!file) return;
+  if (!file) { alert("Aucun fichier sélectionné"); return; }
+  alert(`Fichier détecté : ${file.name} / ${file.type} / ${Math.round(file.size/1024)}KB`);
   setUploadingKey(taskKey);
   try {
-    // Vérification taille (max 10MB brut)
     if (file.size > 10 * 1024 * 1024) {
       alert("Photo trop lourde (max 10MB).");
       setUploadingKey(null);
       return;
     }
     const base64 = await imageToBase64(file);
+    alert(`base64 obtenu : ${base64 ? base64.slice(0,30)+"..." : "VIDE"}`);
     if (!base64) throw new Error("base64 vide");
     const existing = Array.isArray(photos[taskKey]) ? photos[taskKey] : [];
     const np = { ...photos, [taskKey]: [...existing, base64] };
     setPhotos(np);
+    alert(`Envoi vers Supabase... taskKey: ${taskKey}`);
     await dbSet({ photos: np });
+    alert("Sauvegarde OK !");
   } catch (err) {
-    console.error("Photo error:", err);
-    alert("Erreur lors de l'ajout de la photo : " + err.message);
+    alert("ERREUR : " + err.message);
   }
   setUploadingKey(null);
 }
