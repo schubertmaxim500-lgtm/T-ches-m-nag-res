@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 const SUPABASE_URL = "https://nbxiydhjlhjvuaggaxve.supabase.co";
 const SUPABASE_KEY = "sb_publishable_Re31HJlpQz46zZxTc6l_VA_IxTCCfoa";
-const SUPABASE_STORAGE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ieGl5ZGhqbGhqdnVhZ2dheHZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDkyODQsImV4cCI6MjA5MDMyNTI4NH0.W8iP9cfhp-6kxopZ4-qI5YnwTceDW1Ymatodx5BvEgQ";
 const ONESIGNAL_APP_ID = "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631";
 const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_API_KEY;
 
@@ -10,62 +9,42 @@ async function dbGet(){
   const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
   const d=await r.json();return d[0]||null;
 }
-async function imageToBase64(file) {
-  return new Promise((resolve, reject) => {
-    // Forcer la conversion en blob JPEG si HEIC ou autre format exotique
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("FileReader failed"));
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Image load failed"));
-      img.onload = () => {
-        try {
-          const canvas = document.createElement("canvas");
-          const max = 600;
-          let w = img.width, h = img.height;
-          if (w > h) { if (w > max) { h = Math.round(h * (max / w)); w = max; } }
-          else { if (h > max) { w = Math.round(w * (max / h)); h = max; } }
-          // Sécurité : éviter canvas 0x0
-          canvas.width = Math.max(w, 1);
-          canvas.height = Math.max(h, 1);
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const data = canvas.toDataURL("image/jpeg", 0.5);
-          if (!data || data === "data:,") reject(new Error("Canvas empty"));
+async function dbSet(patch){
+  await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
+}
+
+async function imageToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error("FileReader failed"));
+    reader.onload=e=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error("Image load failed"));
+      img.onload=()=>{
+        try{
+          const canvas=document.createElement("canvas");
+          const max=600;let w=img.width,h=img.height;
+          if(w>h){if(w>max){h=Math.round(h*(max/w));w=max;}}else{if(h>max){w=Math.round(w*(max/h));h=max;}}
+          canvas.width=Math.max(w,1);canvas.height=Math.max(h,1);
+          const ctx=canvas.getContext("2d");
+          ctx.drawImage(img,0,0,canvas.width,canvas.height);
+          const data=canvas.toDataURL("image/jpeg",0.5);
+          if(!data||data==="data:,")reject(new Error("Canvas empty"));
           else resolve(data);
-        } catch (err) { reject(err); }
+        }catch(err){reject(err);}
       };
-      // Délai minimal pour Safari Mobile
-      setTimeout(() => { img.src = e.target.result; }, 0);
+      setTimeout(()=>{img.src=e.target.result;},0);
     };
     reader.readAsDataURL(file);
   });
 }
 
-async function handlePhotoUpload(e, taskKey){
-  const file = e.target.files[0];
-  if(!file){ setUploadingKey("ERR:aucun fichier"); return; }
-  setUploadingKey(`FICHIER:${file.name}|${file.type}|${Math.round(file.size/1024)}KB`);
-  await new Promise(r => setTimeout(r, 3000));
+async function sendPushNotification(title,message){
   try{
-    const base64 = await imageToBase64(file);
-    setUploadingKey(`BASE64:${base64 ? "OK" : "VIDE"}`);
-    await new Promise(r => setTimeout(r, 3000));
-    if(!base64) throw new Error("base64 vide");
-    const existing = Array.isArray(photos[taskKey]) ? photos[taskKey] : [];
-    const np = {...photos, [taskKey]: [...existing, base64]};
-    setPhotos(np);
-    setUploadingKey(`SUPABASE:envoi...`);
-    await new Promise(r => setTimeout(r, 3000));
-    await dbSet({photos: np});
-    setUploadingKey(`OK:sauvegarde reussie`);
-    await new Promise(r => setTimeout(r, 3000));
-  } catch(err){
-    setUploadingKey(`ERREUR:${err.message}`);
-    await new Promise(r => setTimeout(r, 5000));
-  }
-  setUploadingKey(null);
+    await fetch("https://onesignal.com/api/v1/notifications",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Key ${ONESIGNAL_API_KEY}`},body:JSON.stringify({app_id:ONESIGNAL_APP_ID,included_segments:["All"],headings:{fr:title,en:title},contents:{fr:message,en:message},url:"https://levasseur-schubert-family-chores.vercel.app"})});
+  }catch(e){console.error(e);}
 }
+
 const DOUBLE_POINTS_TASKS=["Enlever les crottes de Tabby"];
 const SHARED_DAILY=["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
 const COUPLE_POOL=["Passer l'aspirateur","Passer le mop","Faire une machine à laver","Etendre le linge","Plier le linge"];
@@ -102,13 +81,53 @@ function msUntilMidnight(){const n=new Date(),m=new Date(n);m.setHours(24,0,0,0)
 const Tick=()=><svg width="14" height="14" viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>;
 const Plus=({color})=><svg width="10" height="10" viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5" stroke={color} strokeWidth="2" strokeLinecap="round"/><line x1="5" y1="2" x2="5" y2="8" stroke={color} strokeWidth="2" strokeLinecap="round"/></svg>;
 
+// Composant photo isolé — ne se remonte pas lors du polling
+function PhotoButton({taskKey, photoUrls, isUploading, onUpload, onView}){
+  const inputRef=useRef(null);
+
+  const handleChange=useCallback((e)=>{
+    const file=e.target.files&&e.target.files[0];
+    if(file) onUpload(file, taskKey);
+    // Reset input pour permettre de re-sélectionner le même fichier
+    e.target.value="";
+  },[taskKey, onUpload]);
+
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:4}} onClick={e=>e.stopPropagation()}>
+      {photoUrls.length>0&&(
+        <button
+          onClick={()=>onView(photoUrls, taskKey)}
+          style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}
+        >
+          📸
+          {photoUrls.length>1&&(
+            <span style={{position:"absolute",top:-4,right:-4,background:"#ef4444",color:"#fff",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 4px"}}>{photoUrls.length}</span>
+          )}
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*,image/heic,image/heif"
+        onChange={handleChange}
+        style={{display:"none"}}
+      />
+      <button
+        onClick={()=>inputRef.current&&inputRef.current.click()}
+        style={{width:28,height:28,borderRadius:8,background:"#f0f0f5",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}
+      >
+        {isUploading?"⏳":"📷"}
+      </button>
+    </div>
+  );
+}
+
 export default function App(){
   const [profiles,setProfiles]=useState(DEFAULT_PROFILES);
   const [done,setDone]=useState({});
   const [history,setHistory]=useState([]);
   const [points,setPoints]=useState({});
   const [rewards,setRewards]=useState(DEFAULT_REWARDS);
-  // photos = { taskKey: [url1, url2, ...] }
   const [photos,setPhotos]=useState({});
   const [today,setToday]=useState(dayKey());
   const [unlockedShown,setUnlockedShown]=useState({});
@@ -137,15 +156,17 @@ export default function App(){
   const [messages,setMessages]=useState([]);
   const [newMsg,setNewMsg]=useState("");
   const [loading,setLoading]=useState(true);
-  const [photoViewer,setPhotoViewer]=useState(null); // {urls:[...], index:0}
-  const [uploadingKey,setUploadingKey]=useState(null);
+  const [photoViewer,setPhotoViewer]=useState(null);
+  const [uploadingKeys,setUploadingKeys]=useState({});
+  const [uploadStatus,setUploadStatus]=useState("");
   const msgEnd=useRef(null);
   const timer=useRef(null);
   const pollTimer=useRef(null);
+  // Ref pour accéder aux photos sans redéclencher les effets
+  const photosRef=useRef({});
 
   function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},msUntilMidnight()+500);}
 
-  // Normalise les photos : accepte string, {url}, ou [url1,url2,...]
   function normalizePhotos(raw){
     if(!raw)return{};
     const out={};
@@ -170,7 +191,9 @@ export default function App(){
         setInitiative(d.initiative||null);
         setMessages(d.messages||[]);
         setUnlockedShown(d.unlocked||{});
-        setPhotos(normalizePhotos(d.photos));
+        const np=normalizePhotos(d.photos);
+        setPhotos(np);
+        photosRef.current=np;
       }
     }catch(e){console.error(e);}
     setLoading(false);
@@ -179,7 +202,8 @@ export default function App(){
   useEffect(()=>{
     scheduleMidnight();
     loadFromDB();
-    pollTimer.current=setInterval(loadFromDB,5000);
+    // Polling toutes les 10s au lieu de 5s pour réduire les re-renders
+    pollTimer.current=setInterval(loadFromDB,10000);
     const lastWelcome=localStorage.getItem("fc_welcome_day");
     if(lastWelcome!==dayKey()){
       localStorage.setItem("fc_welcome_day",dayKey());
@@ -208,55 +232,62 @@ export default function App(){
     setFirstLogin(false);setRulesPage(0);
   }
 
-  async function handlePhotoUpload(e,taskKey){
-    const file=e.target.files[0];if(!file)return;
-    setUploadingKey(taskKey);
+  // Utilise useCallback pour stabiliser la référence — évite de remonter PhotoButton
+  const handlePhotoUpload=useCallback(async(file, taskKey)=>{
+    if(!file)return;
+    setUploadingKeys(prev=>({...prev,[taskKey]:true}));
+    setUploadStatus("Traitement...");
     try{
-      const base64=await imageToBase64(file);
-      if(base64){
-        const existing=Array.isArray(photos[taskKey])?photos[taskKey]:[];
-        const np={...photos,[taskKey]:[...existing,base64]};
-        setPhotos(np);
-        await dbSet({photos:np});
+      if(file.size>15*1024*1024){
+        setUploadStatus("Photo trop lourde");
+        setTimeout(()=>setUploadStatus(""),3000);
+        setUploadingKeys(prev=>({...prev,[taskKey]:false}));
+        return;
       }
+      const base64=await imageToBase64(file);
+      if(!base64)throw new Error("Conversion échouée");
+      setUploadStatus("Sauvegarde...");
+      // Utilise la ref pour éviter les problèmes de closure avec le state
+      const currentPhotos=photosRef.current;
+      const existing=Array.isArray(currentPhotos[taskKey])?currentPhotos[taskKey]:[];
+      const np={...currentPhotos,[taskKey]:[...existing,base64]};
+      photosRef.current=np;
+      setPhotos(np);
+      await dbSet({photos:np});
+      setUploadStatus("✅ Photo ajoutée !");
+      setTimeout(()=>setUploadStatus(""),3000);
     }catch(err){
       console.error("Photo error:",err);
+      setUploadStatus("❌ Erreur: "+err.message);
+      setTimeout(()=>setUploadStatus(""),5000);
     }
-    setUploadingKey(null);
+    setUploadingKeys(prev=>({...prev,[taskKey]:false}));
+  },[]);
+
+  const handleViewPhoto=useCallback((urls, taskKey)=>{
+    setPhotoViewer({urls,index:0,taskKey});
+  },[]);
+
+  function PhotoBtn({taskKey}){
+    const urls=photos[taskKey]||[];
+    const isUploading=!!uploadingKeys[taskKey];
+    return(
+      <PhotoButton
+        taskKey={taskKey}
+        photoUrls={urls}
+        isUploading={isUploading}
+        onUpload={handlePhotoUpload}
+        onView={handleViewPhoto}
+      />
+    );
   }
 
-async function handlePhotoUpload(e, taskKey){
-  const file = e.target.files[0];
-  if(!file){ setUploadingKey("ERR:aucun fichier"); return; }
-  setUploadingKey(`FICHIER:${file.name}|${file.type}|${Math.round(file.size/1024)}KB`);
-  await new Promise(r => setTimeout(r, 3000));
-  try{
-    const base64 = await imageToBase64(file);
-    setUploadingKey(`BASE64:${base64 ? "OK" : "VIDE"}`);
-    await new Promise(r => setTimeout(r, 3000));
-    if(!base64) throw new Error("base64 vide");
-    const existing = Array.isArray(photos[taskKey]) ? photos[taskKey] : [];
-    const np = {...photos, [taskKey]: [...existing, base64]};
-    setPhotos(np);
-    setUploadingKey(`SUPABASE:envoi...`);
-    await new Promise(r => setTimeout(r, 3000));
-    await dbSet({photos: np});
-    setUploadingKey(`OK:sauvegarde reussie`);
-    await new Promise(r => setTimeout(r, 3000));
-  } catch(err){
-    setUploadingKey(`ERREUR:${err.message}`);
-    await new Promise(r => setTimeout(r, 5000));
-  }
-  setUploadingKey(null);
-}
   const wk=weekKey();
 
-  // ── TABLE ROULEMENT ──
   function getTableSetter(){return tableRota[wk]||null;}
   function whoSetsTableToday(){
     const setter=getTableSetter();if(!setter)return null;
     const d=new Date().getDay();
-    // Lundi=0, Mardi=1, ... Dimanche=6
     const daysFromMon=d===0?6:d-1;
     const kids=["Michel","Gabrielle"];
     const setterIdx=kids.indexOf(setter);
@@ -385,7 +416,6 @@ async function handlePhotoUpload(e, taskKey){
     const x=map[type]||map.hebdo;return{fontSize:10,padding:"2px 7px",borderRadius:99,background:x.bg,color:x.c,fontWeight:600,whiteSpace:"nowrap"};
   };
 
-  // Calcul max points pour les barres
   const maxPoints=Math.max(...Object.keys(profiles).map(m=>points[m]||0),1);
 
   if(loading)return(
@@ -478,6 +508,13 @@ async function handlePhotoUpload(e, taskKey){
           </div>
         </div>
 
+        {/* Statut upload global */}
+        {uploadStatus!=""&&(
+          <div style={{margin:"0 1rem 10px",padding:"10px 14px",borderRadius:14,background:uploadStatus.startsWith("✅")?"#DCFCE7":uploadStatus.startsWith("❌")?"#FEE2E2":"#EDE9FE",color:uploadStatus.startsWith("✅")?"#16A34A":uploadStatus.startsWith("❌")?"#DC2626":"#7C3AED",fontWeight:600,fontSize:13,textAlign:"center"}}>
+            {uploadStatus}
+          </div>
+        )}
+
         <div style={{padding:"0 1rem"}}>
         {isKid&&kidChallenge(selectedMember).unlocked&&!unlockedShown[selectedMember]&&(
           <div style={{background:`${color}15`,border:`2px solid ${color}`,borderRadius:20,padding:"1rem",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -490,7 +527,6 @@ async function handlePhotoUpload(e, taskKey){
         )}
 
         {page==="tasks"&&(<>
-          {/* Tâches hebdomadaires */}
           <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
               <p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:0}}>Tâches hebdomadaires Michel &amp; Gabrielle</p>
@@ -515,7 +551,6 @@ async function handlePhotoUpload(e, taskKey){
             })}
           </div>
 
-          {/* Michel vs Gabrielle + Table */}
           {(()=>{
             const counts=kidsCommonCount();
             const mS=counts["Michel"]||0;const gS=counts["Gabrielle"]||0;const total=mS+gS||1;
@@ -532,8 +567,6 @@ async function handlePhotoUpload(e, taskKey){
                   <span style={{fontSize:13,fontWeight:700,color:pc("Gabrielle"),minWidth:54,textAlign:"right"}}>{gS} {pe("Gabrielle")}</span>
                 </div>
                 <p style={{fontSize:11,color:"#aaa",textAlign:"center",margin:"0 0 12px"}}>Tâches hebdomadaires · récompense au meilleur !</p>
-
-                {/* Roulement table */}
                 <div style={{borderTop:"1px solid #f5f5f7",paddingTop:10}}>
                   <p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>🍽️ Table cette semaine</p>
                   {!getTableSetter()?(
@@ -543,7 +576,6 @@ async function handlePhotoUpload(e, taskKey){
                     </div>
                   ):(
                     <>
-                      {/* Aujourd'hui en évidence */}
                       <div style={{display:"flex",gap:8,marginBottom:10}}>
                         <div style={{flex:1,background:`${pc(setter)}15`,borderRadius:14,padding:"10px",textAlign:"center",border:`2px solid ${pc(setter)}33`}}>
                           <p style={{fontSize:11,color:"#888",margin:"0 0 2px"}}>Aujourd'hui — met la table</p>
@@ -556,7 +588,6 @@ async function handlePhotoUpload(e, taskKey){
                           <p style={{fontSize:13,fontWeight:700,color:pc(clearer),margin:"2px 0 0"}}>{clearer}</p>
                         </div>
                       </div>
-                      {/* Planning semaine */}
                       {tableSchedule&&(
                         <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:4}}>
                           {tableSchedule.map(({day,sets},i)=>{
@@ -578,7 +609,6 @@ async function handlePhotoUpload(e, taskKey){
             );
           })()}
 
-          {/* Initiative */}
           <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:"1.5px solid #FEF9C3"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
               <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>⭐ Initiative <span style={{fontSize:12,color:"#A16207",fontWeight:600,marginLeft:6}}>+2 pts</span></p>
@@ -611,7 +641,6 @@ async function handlePhotoUpload(e, taskKey){
             )}
           </div>
 
-          {/* Maman & Papou */}
           <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
               <p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>Maman &amp; Papou</p>
@@ -637,7 +666,6 @@ async function handlePhotoUpload(e, taskKey){
             })}
           </div>
 
-          {/* Tâches perso */}
           {Object.keys(profiles).filter(m=>(PERSONAL_TASKS[m]||[]).length>0).map(pm=>{
             const pmTasks=PERSONAL_TASKS[pm]||[];
             const pmDone=pmTasks.filter(t=>done[`${wk}|personal|${pm}|${t}`]).length;
@@ -668,7 +696,6 @@ async function handlePhotoUpload(e, taskKey){
             );
           })}
 
-          {/* Challenges */}
           {KIDS.map(kid=>{
             const kp=kidChallenge(kid);const kC=pc(kid);const kE=pe(kid);const isOwn=kid===selectedMember;
             return(
@@ -783,7 +810,6 @@ async function handlePhotoUpload(e, taskKey){
         </div>
       </div>
 
-      {/* Bottom nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,display:"flex",justifyContent:"center"}}>
         <div style={{width:"100%",maxWidth:480,background:"#fff",borderTop:"1px solid #f0f0f5",display:"flex",padding:"8px 0 20px",boxShadow:"0 -4px 20px #0000000a"}}>
           {[["tasks","🏠","Tâches"],["scores","🏅","Points"],["history","📋","Historique"],["messages","💬","Messages"]].map(([p,ic,lb])=>(
@@ -795,7 +821,6 @@ async function handlePhotoUpload(e, taskKey){
         </div>
       </div>
 
-      {/* Photo viewer multi-photos */}
       {photoViewer&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}}>
           <button onClick={()=>setPhotoViewer(null)} style={{position:"absolute",top:20,right:20,width:40,height:40,borderRadius:20,background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",fontSize:20,cursor:"pointer"}}>✕</button>
@@ -810,7 +835,6 @@ async function handlePhotoUpload(e, taskKey){
         </div>
       )}
 
-      {/* Règles */}
       {firstLogin&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:400,padding:"1rem"}}>
           <div style={{background:"#fff",borderRadius:24,padding:"1.75rem",width:"100%",maxWidth:340,textAlign:"center"}}>
@@ -831,7 +855,6 @@ async function handlePhotoUpload(e, taskKey){
         </div>
       )}
 
-      {/* Gage */}
       {gageAlert&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:"1rem"}} onClick={()=>setGageAlert(null)}>
           <div style={{background:"#fff",borderRadius:24,padding:"1.75rem",width:"100%",maxWidth:340,textAlign:"center"}} onClick={e=>e.stopPropagation()}>
@@ -845,7 +868,6 @@ async function handlePhotoUpload(e, taskKey){
         </div>
       )}
 
-      {/* Fin de semaine */}
       {endWeekModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:"1rem"}}>
           <div style={{background:"#fff",borderRadius:24,padding:"1.5rem",width:"100%",maxWidth:340}}>
@@ -889,7 +911,6 @@ async function handlePhotoUpload(e, taskKey){
         </div>
       )}
 
-      {/* Profil */}
       {editingProfile&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}} onClick={()=>setEditingProfile(false)}>
           <div style={{width:"100%",maxWidth:480,background:"#fff",borderRadius:"24px 24px 0 0",padding:"1.5rem 1.25rem 2.5rem"}} onClick={e=>e.stopPropagation()}>
