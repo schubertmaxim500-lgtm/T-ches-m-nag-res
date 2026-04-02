@@ -180,26 +180,27 @@ export default function App(){
     return out;
   }
 
-  async function loadFromDB(){
-    try{
-      const d=await dbGet();
-      if(d){
-        if(d.profiles&&Object.keys(d.profiles).length>0)setProfiles(d.profiles);
-        setDone(d.done||{});
-        setHistory(d.history||[]);
-        setPoints(d.points||{});
-        if(d.rewards&&Object.keys(d.rewards).length>0)setRewards(d.rewards);
-        setTableRota(d.table_rota||{});
-        setInitiative(d.initiative||null);
-        setMessages(d.messages||[]);
-        setUnlockedShown(d.unlocked||{});
-        const np=normalizePhotos(d.photos);
-        setPhotos(np);
-        photosRef.current=np;
-      }
-    }catch(e){console.error(e);}
-    setLoading(false);
-  }
+ async function loadFromDB(){
+  try{
+    const d=await dbGet();
+    if(d){
+      if(d.profiles&&Object.keys(d.profiles).length>0)setProfiles(d.profiles);
+      setDone(d.done||{});
+      setHistory(d.history||[]);
+      setPoints(d.points||{});
+      if(d.rewards&&Object.keys(d.rewards).length>0)setRewards(d.rewards);
+      setTableRota(d.table_rota||{});
+      setInitiative(d.initiative||null);
+      setMessages(d.messages||[]);
+      setUnlockedShown(d.unlocked||{});
+    }
+    // Charge les photos depuis la table dédiée fc_photos
+    const np=await dbLoadPhotos(weekKey());
+    setPhotos(np);
+    photosRef.current=np;
+  }catch(e){console.error(e);}
+  setLoading(false);
+}
 
   useEffect(()=>{
     scheduleMidnight();
