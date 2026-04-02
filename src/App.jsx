@@ -226,28 +226,33 @@ export default function App(){
     setUploadingKey(null);
   }
 
-  function PhotoBtn({taskKey}){
-    const urls=photos[taskKey]||[];
-    return(
-      <div style={{display:"flex",alignItems:"center",gap:4}} onClick={e=>e.stopPropagation()}>
-        {urls.length>0&&(
-          <button onClick={()=>setPhotoViewer({urls,index:0,taskKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
-            📸
-            {urls.length>1&&<span style={{position:"absolute",top:-4,right:-4,background:"#ef4444",color:"#fff",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 4px"}}>{urls.length}</span>}
-          </button>
-        )}
-        <label style={{width:28,height:28,borderRadius:8,background:"#f0f0f5",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}>
-          {uploadingKey===taskKey?"⏳":"📷"}
-         <input 
-  type="file" 
-  accept="image/*,image/heic,image/heif" 
-  onChange={e => handlePhotoUpload(e, taskKey)} 
-  style={{display:"none"}}
-/>
-        </label>
-      </div>
-    );
-  }
+function PhotoBtn({taskKey}){
+  const urls=photos[taskKey]||[];
+  const inputRef=useRef(null);
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:4}} onClick={e=>e.stopPropagation()}>
+      {urls.length>0&&(
+        <button onClick={()=>setPhotoViewer({urls,index:0,taskKey})} style={{width:28,height:28,borderRadius:8,border:"none",background:"#f0f0f5",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+          📸
+          {urls.length>1&&<span style={{position:"absolute",top:-4,right:-4,background:"#ef4444",color:"#fff",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 4px"}}>{urls.length}</span>}
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*,image/heic,image/heif"
+        onChange={e=>handlePhotoUpload(e,taskKey)}
+        style={{display:"none"}}
+      />
+      <button
+        onClick={()=>inputRef.current&&inputRef.current.click()}
+        style={{width:28,height:28,borderRadius:8,background:"#f0f0f5",border:"none",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}
+      >
+        {uploadingKey===taskKey?"⏳":"📷"}
+      </button>
+    </div>
+  );
+}
 
   const wk=weekKey();
 
