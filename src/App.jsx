@@ -225,23 +225,30 @@ export default function App(){
     setUploadingKey(null);
   }
 
-function PhotoBtn({taskKey}){
-  return(
-    <div onClick={e=>e.stopPropagation()}>
-      <input
-        type="file"
-        accept="image/*"
-        onChange={e=>{
-          handlePhotoUpload(e,taskKey);
-        }}
-      />
-      <div style={{fontSize:11,color:"red",maxWidth:120,wordBreak:"break-all"}}>
-        {uploadingKey||"en attente"}
-      </div>
-    </div>
-  );
+async function handlePhotoUpload(e, taskKey){
+  const file = e.target.files[0];
+  if(!file){ setUploadingKey("ERR:aucun fichier"); return; }
+  setUploadingKey(`FICHIER:${file.name}|${file.type}|${Math.round(file.size/1024)}KB`);
+  await new Promise(r => setTimeout(r, 3000));
+  try{
+    const base64 = await imageToBase64(file);
+    setUploadingKey(`BASE64:${base64 ? "OK" : "VIDE"}`);
+    await new Promise(r => setTimeout(r, 3000));
+    if(!base64) throw new Error("base64 vide");
+    const existing = Array.isArray(photos[taskKey]) ? photos[taskKey] : [];
+    const np = {...photos, [taskKey]: [...existing, base64]};
+    setPhotos(np);
+    setUploadingKey(`SUPABASE:envoi...`);
+    await new Promise(r => setTimeout(r, 3000));
+    await dbSet({photos: np});
+    setUploadingKey(`OK:sauvegarde reussie`);
+    await new Promise(r => setTimeout(r, 3000));
+  } catch(err){
+    setUploadingKey(`ERREUR:${err.message}`);
+    await new Promise(r => setTimeout(r, 5000));
+  }
+  setUploadingKey(null);
 }
-
   const wk=weekKey();
 
   // ── TABLE ROULEMENT ──
