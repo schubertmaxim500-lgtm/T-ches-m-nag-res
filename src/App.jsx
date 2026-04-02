@@ -17,36 +17,28 @@ async function dbSet(patch){
 
 // Upload fichier image vers Supabase Storage, retourne l'URL publique
 async function uploadPhotoToStorage(file){
-  return new Promise((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onerror=()=>reject(new Error("FileReader failed"));
-    reader.onload=e=>{
-      const img=new Image();
-      img.onerror=()=>reject(new Error("Image load failed"));
-      img.onload=()=>{
-        try{
-          const canvas=document.createElement("canvas");
-          const max=800;let w=img.width,h=img.height;
-          if(w>h){if(w>max){h=Math.round(h*(max/w));w=max;}}else{if(h>max){w=Math.round(w*(max/h));h=max;}}
-          canvas.width=Math.max(w,1);canvas.height=Math.max(h,1);
-          const ctx=canvas.getContext("2d");
-          ctx.drawImage(img,0,0,canvas.width,canvas.height);
-          canvas.toBlob(async(blob)=>{
-            if(!blob){reject(new Error("Canvas toBlob failed"));return;}
-            try{
-              const filename=`photo_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-              const uploadRes=await fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${filename}`,{
-                method:"POST",
-                headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"image/jpeg","x-upsert":"true"},
-                body:blob
-              });
-              if(!uploadRes.ok){const e=await uploadRes.text();reject(new Error(`Upload ${uploadRes.status}: ${e}`));return;}
-              const publicUrl=`${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${filename}`;
-              resolve(publicUrl);
-            }catch(err){reject(err);}
-          },"image/jpeg",0.7);
-        }catch(err){reject(err);}
-      };
+  return new Promise((resolve, reject)=>{
+    const filename = `photo_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+    
+    // Sur iOS, on uploade le fichier directement sans canvas
+    fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${filename}`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": file.type || "image/jpeg",
+        "x-upsert": "true"
+      },
+      body: file
+    })
+    .then(res => {
+      if(!res.ok) return res.text().then(e => reject(new Error(`Upload ${res.status}: ${e}`)));
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${filename}`;
+      resolve(publicUrl);
+    })
+    .catch(reject);
+  });
+}
       setTimeout(()=>{img.src=e.target.result;},0);
     };
     reader.readAsDataURL(file);
