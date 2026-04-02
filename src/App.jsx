@@ -10,7 +10,11 @@ async function dbGet(){
   const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
   const d=await r.json();return d[0]||null;
 }
-async function dbAddPhoto(taskKey, weekKey, photoUrl){
+async function dbSet(patch){
+  const response=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
+  if(!response.ok){const err=await response.text();throw new Error(`Supabase ${response.status}: ${err}`);}
+}
+async function dbAddPhoto(taskKey, wk, photoUrl){
   const response = await fetch(`${SUPABASE_URL}/rest/v1/fc_photos`, {
     method: "POST",
     headers: {
@@ -19,13 +23,12 @@ async function dbAddPhoto(taskKey, weekKey, photoUrl){
       "Content-Type": "application/json",
       Prefer: "return=minimal"
     },
-    body: JSON.stringify({ task_key: taskKey, week_key: weekKey, photo_url: photoUrl })
+    body: JSON.stringify({ task_key: taskKey, week_key: wk, photo_url: photoUrl })
   });
   if(!response.ok){ const err = await response.text(); throw new Error(`Supabase ${response.status}: ${err}`); }
 }
-
-async function dbLoadPhotos(weekKey){
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/fc_photos?week_key=eq.${weekKey}&order=created_at.asc`, {
+async function dbLoadPhotos(wk){
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/fc_photos?week_key=eq.${wk}&order=created_at.asc`, {
     headers: {
       apikey: SUPABASE_KEY,
       Authorization: `Bearer ${SUPABASE_KEY}`
@@ -33,13 +36,33 @@ async function dbLoadPhotos(weekKey){
   });
   if(!response.ok){ const err = await response.text(); throw new Error(`Supabase ${response.status}: ${err}`); }
   const rows = await response.json();
-  // Regroupe par task_key → { "task_abc": ["url1", "url2"], ... }
   const result = {};
   for(const row of rows){
     if(!result[row.task_key]) result[row.task_key] = [];
     result[row.task_key].push(row.photo_url);
   }
   return result;
+}
+async function uploadPhotoToStorage(file){
+  return new Promise((resolve, reject)=>{
+    const filename = `photo_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+    fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${filename}`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": file.type || "image/jpeg",
+        "x-upsert": "true"
+      },
+      body: file
+    })
+    .then(res => {
+      if(!res.ok) return res.text().then(e => reject(new Error(`Upload ${res.status}: ${e}`)));
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${filename}`;
+      resolve(publicUrl);
+    })
+    .catch(reject);
+  });
 }
 async function sendPushNotification(title,message){
   try{
@@ -90,7 +113,6 @@ function PhotoButton({taskKey, photoUrls, isUploading, onUpload, onView}){
   const handleChange=useCallback((e)=>{
     const file=e.target.files&&e.target.files[0];
     if(file) onUpload(file, taskKey);
-    // Reset input pour permettre de re-sélectionner le même fichier
     e.target.value="";
   },[taskKey, onUpload]);
 
@@ -164,49 +186,35 @@ export default function App(){
   const msgEnd=useRef(null);
   const timer=useRef(null);
   const pollTimer=useRef(null);
-  // Ref pour accéder aux photos sans redéclencher les effets
   const photosRef=useRef({});
 
   function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},msUntilMidnight()+500);}
 
-  function normalizePhotos(raw){
-    if(!raw)return{};
-    const out={};
-    Object.entries(raw).forEach(([k,v])=>{
-      if(typeof v==="string") out[k]=[v];
-      else if(Array.isArray(v)) out[k]=v.filter(Boolean);
-      else if(v&&v.url) out[k]=[v.url];
-    });
-    return out;
+  async function loadFromDB(){
+    try{
+      const d=await dbGet();
+      if(d){
+        if(d.profiles&&Object.keys(d.profiles).length>0)setProfiles(d.profiles);
+        setDone(d.done||{});
+        setHistory(d.history||[]);
+        setPoints(d.points||{});
+        if(d.rewards&&Object.keys(d.rewards).length>0)setRewards(d.rewards);
+        setTableRota(d.table_rota||{});
+        setInitiative(d.initiative||null);
+        setMessages(d.messages||[]);
+        setUnlockedShown(d.unlocked||{});
+      }
+      // Charge les photos depuis la table dédiée fc_photos
+      const np=await dbLoadPhotos(weekKey());
+      setPhotos(np);
+      photosRef.current=np;
+    }catch(e){console.error(e);}
+    setLoading(false);
   }
-
- 
-    // Charge les photos depuis la table dédiée fc_photos
-    const np=await dbLoadPhotos(weekKey());
-    setPhotos(np);
-    photosRef.current=np;
-  }catch(e){console.error(e);}
-  setLoading(false);
-}
-async function loadFromDB(){
-  try{
-    const d=await dbGet();
-    if(d){
-      if(d.profiles&&Object.keys(d.profiles).length>0)setProfiles(d.profiles);
-      setDone(d.done||{});
-      setHistory(d.history||[]);
-      setPoints(d.points||{});
-      if(d.rewards&&Object.keys(d.rewards).length>0)setRewards(d.rewards);
-      setTableRota(d.table_rota||{});
-      setInitiative(d.initiative||null);
-      setMessages(d.messages||[]);
-      setUnlockedShown(d.unlocked||{});
-    }
 
   useEffect(()=>{
     scheduleMidnight();
     loadFromDB();
-    // Polling toutes les 10s au lieu de 5s pour réduire les re-renders
     pollTimer.current=setInterval(loadFromDB,10000);
     const lastWelcome=localStorage.getItem("fc_welcome_day");
     if(lastWelcome!==dayKey()){
@@ -236,36 +244,36 @@ async function loadFromDB(){
     setFirstLogin(false);setRulesPage(0);
   }
 
-  // Utilise useCallback pour stabiliser la référence — évite de remonter PhotoButton
- const handlePhotoUpload=useCallback(async(file, taskKey)=>{
-  if(!file)return;
-  setUploadingKeys(prev=>({...prev,[taskKey]:true}));
-  setUploadStatus("Upload en cours...");
-  try{
-    if(file.size>50*1024*1024){
-      setUploadStatus("❌ Photo trop lourde (max 50MB)");
+  const handlePhotoUpload=useCallback(async(file, taskKey)=>{
+    if(!file)return;
+    setUploadingKeys(prev=>({...prev,[taskKey]:true}));
+    setUploadStatus("Upload en cours...");
+    try{
+      if(file.size>50*1024*1024){
+        setUploadStatus("❌ Photo trop lourde (max 50MB)");
+        setTimeout(()=>setUploadStatus(""),3000);
+        setUploadingKeys(prev=>({...prev,[taskKey]:false}));
+        return;
+      }
+      const photoUrl=await uploadPhotoToStorage(file);
+      setUploadStatus("Sauvegarde...");
+      await dbAddPhoto(taskKey, weekKey(), photoUrl);
+      setPhotos(prev=>{
+        const existing=Array.isArray(prev[taskKey])?prev[taskKey]:[];
+        const np={...prev,[taskKey]:[...existing,photoUrl]};
+        photosRef.current=np;
+        return np;
+      });
+      setUploadStatus("✅ Photo ajoutée !");
       setTimeout(()=>setUploadStatus(""),3000);
-      setUploadingKeys(prev=>({...prev,[taskKey]:false}));
-      return;
+    }catch(err){
+      console.error("Photo error:",err);
+      setUploadStatus("❌ Erreur: "+err.message);
+      setTimeout(()=>setUploadStatus(""),5000);
     }
-    const photoUrl=await uploadPhotoToStorage(file);
-    setUploadStatus("Sauvegarde...");
-    await dbAddPhoto(taskKey, weekKey(), photoUrl);
-    setPhotos(prev=>{
-      const existing=Array.isArray(prev[taskKey])?prev[taskKey]:[];
-      const np={...prev,[taskKey]:[...existing,photoUrl]};
-      photosRef.current=np;
-      return np;
-    });
-    setUploadStatus("✅ Photo ajoutée !");
-    setTimeout(()=>setUploadStatus(""),3000);
-  }catch(err){
-    console.error("Photo error:",err);
-    setUploadStatus("❌ Erreur: "+err.message);
-    setTimeout(()=>setUploadStatus(""),5000);
-  }
-  setUploadingKeys(prev=>({...prev,[taskKey]:false}));
-},[]);
+    setUploadingKeys(prev=>({...prev,[taskKey]:false}));
+  },[]);
+
   const handleViewPhoto=useCallback((urls, taskKey)=>{
     setPhotoViewer({urls,index:0,taskKey});
   },[]);
@@ -510,7 +518,6 @@ async function loadFromDB(){
           </div>
         </div>
 
-        {/* Statut upload global */}
         {uploadStatus!=""&&(
           <div style={{margin:"0 1rem 10px",padding:"10px 14px",borderRadius:14,background:uploadStatus.startsWith("✅")?"#DCFCE7":uploadStatus.startsWith("❌")?"#FEE2E2":"#EDE9FE",color:uploadStatus.startsWith("✅")?"#16A34A":uploadStatus.startsWith("❌")?"#DC2626":"#7C3AED",fontWeight:600,fontSize:13,textAlign:"center"}}>
             {uploadStatus}
