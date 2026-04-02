@@ -46,7 +46,7 @@ async function handlePhotoUpload(e, taskKey){
   const file = e.target.files[0];
   if(!file){ setUploadingKey("ERR:aucun fichier"); return; }
   setUploadingKey(`ERR:${file.name}|${file.type}|${Math.round(file.size/1024)}KB`);
-  await new Promise(r => setTimeout(r, 3000)); // pause 3s pour lire
+  await new Promise(r => setTimeout(r, 3000));
   setUploadingKey(taskKey);
   try{
     const base64 = await imageToBase64(file);
