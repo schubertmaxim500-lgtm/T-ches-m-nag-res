@@ -238,7 +238,12 @@ export default function App(){
         )}
         <label style={{width:28,height:28,borderRadius:8,background:"#f0f0f5",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:14}}>
           {uploadingKey===taskKey?"⏳":"📷"}
-          <input type="file" accept="image/*" capture="environment" onChange={e=>handlePhotoUpload(e,taskKey)} style={{display:"none"}}/>
+         <input 
+  type="file" 
+  accept="image/*,image/heic,image/heif" 
+  onChange={e => handlePhotoUpload(e, taskKey)} 
+  style={{display:"none"}}
+/>
         </label>
       </div>
     );
