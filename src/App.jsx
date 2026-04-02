@@ -16,19 +16,27 @@ async function dbSet(patch){
 
 // Convertit une image en base64 compressée
 async function imageToBase64(file){
-  return new Promise(resolve=>{
-    const img=new Image();
-    const url=URL.createObjectURL(file);
-    img.onload=()=>{
-      const canvas=document.createElement("canvas");
-      const max=600;let w=img.width,h=img.height;
-      if(w>h){if(w>max){h=h*(max/w);w=max;}}else{if(h>max){w=w*(max/h);h=max;}}
-      canvas.width=w;canvas.height=h;
-      canvas.getContext("2d").drawImage(img,0,0,w,h);
-      resolve(canvas.toDataURL("image/jpeg",0.6));
-      URL.revokeObjectURL(url);
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        try{
+          const canvas=document.createElement("canvas");
+          const max=600;let w=img.width,h=img.height;
+          if(w>h){if(w>max){h=Math.round(h*(max/w));w=max;}}else{if(h>max){w=Math.round(w*(max/h));h=max;}}
+          canvas.width=w;canvas.height=h;
+          const ctx=canvas.getContext("2d");
+          ctx.drawImage(img,0,0,w,h);
+          const data=canvas.toDataURL("image/jpeg",0.5);
+          resolve(data);
+        }catch(err){reject(err);}
+      };
+      img.onerror=reject;
+      img.src=e.target.result;
     };
-    img.src=url;
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
   });
 }
 
@@ -180,17 +188,20 @@ export default function App(){
     setFirstLogin(false);setRulesPage(0);
   }
 
-  // ── PHOTO HANDLER ── stockage base64 direct dans Supabase
   async function handlePhotoUpload(e,taskKey){
     const file=e.target.files[0];if(!file)return;
     setUploadingKey(taskKey);
     try{
       const base64=await imageToBase64(file);
-      const existing=photos[taskKey]||[];
-      const np={...photos,[taskKey]:[...existing,base64]};
-      setPhotos(np);
-      await dbSet({photos:np});
-    }catch(err){console.error(err);}
+      if(base64){
+        const existing=Array.isArray(photos[taskKey])?photos[taskKey]:[];
+        const np={...photos,[taskKey]:[...existing,base64]};
+        setPhotos(np);
+        await dbSet({photos:np});
+      }
+    }catch(err){
+      console.error("Photo error:",err);
+    }
     setUploadingKey(null);
   }
 
