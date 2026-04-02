@@ -14,37 +14,22 @@ async function dbSet(patch){
   await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
 }
 
-async function compressImage(file){
+// Convertit une image en base64 compressée
+async function imageToBase64(file){
   return new Promise(resolve=>{
     const img=new Image();
     const url=URL.createObjectURL(file);
     img.onload=()=>{
       const canvas=document.createElement("canvas");
-      const max=1024;let w=img.width,h=img.height;
+      const max=600;let w=img.width,h=img.height;
       if(w>h){if(w>max){h=h*(max/w);w=max;}}else{if(h>max){w=w*(max/h);h=max;}}
       canvas.width=w;canvas.height=h;
       canvas.getContext("2d").drawImage(img,0,0,w,h);
-      canvas.toBlob(blob=>resolve(new File([blob],file.name,{type:"image/jpeg"})),"image/jpeg",0.7);
+      resolve(canvas.toDataURL("image/jpeg",0.6));
       URL.revokeObjectURL(url);
     };
     img.src=url;
   });
-}
-
-// Upload une photo, retourne l'URL publique ou null
-async function photoUpload(file,taskKey){
-  try{
-    const compressed=await compressImage(file);
-    const safe=taskKey.replace(/[|]/g,'_').replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_.-]/g,'_');
-    const path=`${safe}_${Date.now()}.jpg`;
-    const res=await fetch(`${SUPABASE_URL}/storage/v1/object/task-photos/${path}`,{
-      method:"POST",
-      headers:{apikey:SUPABASE_STORAGE_KEY,Authorization:`Bearer ${SUPABASE_STORAGE_KEY}`,"Content-Type":"image/jpeg"},
-      body:compressed
-    });
-    if(!res.ok){console.error("upload failed",await res.text());return null;}
-    return `${SUPABASE_URL}/storage/v1/object/public/task-photos/${path}`;
-  }catch(e){console.error(e);return null;}
 }
 
 async function sendPushNotification(title,message){
@@ -195,17 +180,17 @@ export default function App(){
     setFirstLogin(false);setRulesPage(0);
   }
 
-  // ── PHOTO HANDLER ──
+  // ── PHOTO HANDLER ── stockage base64 direct dans Supabase
   async function handlePhotoUpload(e,taskKey){
     const file=e.target.files[0];if(!file)return;
     setUploadingKey(taskKey);
-    const url=await photoUpload(file,taskKey);
-    if(url){
+    try{
+      const base64=await imageToBase64(file);
       const existing=photos[taskKey]||[];
-      const np={...photos,[taskKey]:[...existing,url]};
+      const np={...photos,[taskKey]:[...existing,base64]};
       setPhotos(np);
       await dbSet({photos:np});
-    }
+    }catch(err){console.error(err);}
     setUploadingKey(null);
   }
 
@@ -581,7 +566,8 @@ export default function App(){
                   <p style={{fontSize:12,color:"#aaa",margin:0}}>Posté par {initiative.postedBy} · {initiative.postedAt}</p>
                   {initiative.acceptedBy&&<p style={{fontSize:12,color:pc(initiative.acceptedBy),fontWeight:600,margin:"4px 0 0"}}>✋ Pris en charge par {initiative.acceptedBy}</p>}
                 </div>
-                {!initiative.acceptedBy&&<button onClick={acceptInitiative} style={{width:"100%",background:color,color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Je prends en charge !</button>}
+                {!initiative.acceptedBy&&selectedMember!==initiative.postedBy&&<button onClick={acceptInitiative} style={{width:"100%",background:color,color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Je prends en charge !</button>}
+                {!initiative.acceptedBy&&selectedMember===initiative.postedBy&&<button onClick={completeInitiative} style={{width:"100%",background:"#10B981",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>J'ai fait la tâche ! (+2 pts)</button>}
                 {initiative.acceptedBy===selectedMember&&<button onClick={completeInitiative} style={{width:"100%",background:"#10B981",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Tâche terminée ! (+2 pts)</button>}
                 {(isCouple||initiative.postedBy===selectedMember)&&<button onClick={cancelInitiative} style={{width:"100%",background:"#f5f5f7",color:"#aaa",border:"none",borderRadius:12,padding:"8px",fontWeight:600,fontSize:12,cursor:"pointer"}}>Annuler</button>}
               </div>
