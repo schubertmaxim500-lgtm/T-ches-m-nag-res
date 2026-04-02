@@ -5,9 +5,23 @@ const SUPABASE_KEY = "sb_publishable_Re31HJlpQz46zZxTc6l_VA_IxTCCfoa";
 const ONESIGNAL_APP_ID = "65de1f8b-1d6e-46f6-be4e-36b5f6c7f631";
 const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_API_KEY;
 
-async function dbGet(){
-  const r=await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
-  const d=await r.json();return d[0]||null;
+async function dbSet(patch){
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{
+    method:"PATCH",
+    headers:{
+      apikey:SUPABASE_KEY,
+      Authorization:`Bearer ${SUPABASE_KEY}`,
+      "Content-Type":"application/json",
+      Prefer:"return=minimal"
+    },
+    body:JSON.stringify({...patch,updated_at:new Date().toISOString()})
+  });
+  if(!response.ok){
+    const err = await response.text();
+    console.error("dbSet error:", response.status, err);
+    // Affiche l'erreur dans le bandeau statut
+    throw new Error(`Supabase ${response.status}: ${err}`);
+  }
 }
 async function dbSet(patch){
   await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
