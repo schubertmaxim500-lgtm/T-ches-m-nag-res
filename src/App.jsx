@@ -235,37 +235,35 @@ export default function App(){
   }
 
   // Utilise useCallback pour stabiliser la référence — évite de remonter PhotoButton
-  const handlePhotoUpload=useCallback(async(file, taskKey)=>{
-    if(!file)return;
-    setUploadingKeys(prev=>({...prev,[taskKey]:true}));
-    setUploadStatus("Upload en cours...");
-    try{
-      if(file.size>50*1024*1024){
-        setUploadStatus("❌ Photo trop lourde (max 50MB)");
-        setTimeout(()=>setUploadStatus(""),3000);
-        setUploadingKeys(prev=>({...prev,[taskKey]:false}));
-        return;
-      }
-      const photoUrl=await uploadPhotoToStorage(file);
-      setUploadStatus("Sauvegarde...");
-      let np;
-      setPhotos(prev=>{
-        const existing=Array.isArray(prev[taskKey])?prev[taskKey]:[];
-        np={...prev,[taskKey]:[...existing,photoUrl]};
-        photosRef.current=np;
-        return np;
-      });
-      await dbSet({photos:photosRef.current});
-      setUploadStatus("✅ Photo ajoutée !");
+ const handlePhotoUpload=useCallback(async(file, taskKey)=>{
+  if(!file)return;
+  setUploadingKeys(prev=>({...prev,[taskKey]:true}));
+  setUploadStatus("Upload en cours...");
+  try{
+    if(file.size>50*1024*1024){
+      setUploadStatus("❌ Photo trop lourde (max 50MB)");
       setTimeout(()=>setUploadStatus(""),3000);
-    }catch(err){
-      console.error("Photo error:",err);
-      setUploadStatus("❌ Erreur: "+err.message);
-      setTimeout(()=>setUploadStatus(""),5000);
+      setUploadingKeys(prev=>({...prev,[taskKey]:false}));
+      return;
     }
-    setUploadingKeys(prev=>({...prev,[taskKey]:false}));
-  },[]);
-
+    const photoUrl=await uploadPhotoToStorage(file);
+    setUploadStatus("Sauvegarde...");
+    await dbAddPhoto(taskKey, weekKey(), photoUrl);
+    setPhotos(prev=>{
+      const existing=Array.isArray(prev[taskKey])?prev[taskKey]:[];
+      const np={...prev,[taskKey]:[...existing,photoUrl]};
+      photosRef.current=np;
+      return np;
+    });
+    setUploadStatus("✅ Photo ajoutée !");
+    setTimeout(()=>setUploadStatus(""),3000);
+  }catch(err){
+    console.error("Photo error:",err);
+    setUploadStatus("❌ Erreur: "+err.message);
+    setTimeout(()=>setUploadStatus(""),5000);
+  }
+  setUploadingKeys(prev=>({...prev,[taskKey]:false}));
+},[]);
   const handleViewPhoto=useCallback((urls, taskKey)=>{
     setPhotoViewer({urls,index:0,taskKey});
   },[]);
