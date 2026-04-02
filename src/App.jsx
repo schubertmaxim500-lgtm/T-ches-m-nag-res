@@ -19,8 +19,6 @@ async function dbSet(patch){
 async function uploadPhotoToStorage(file){
   return new Promise((resolve, reject)=>{
     const filename = `photo_${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
-    
-    // Sur iOS, on uploade le fichier directement sans canvas
     fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${filename}`, {
       method: "POST",
       headers: {
@@ -39,12 +37,6 @@ async function uploadPhotoToStorage(file){
     .catch(reject);
   });
 }
-      setTimeout(()=>{img.src=e.target.result;},0);
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
 async function sendPushNotification(title,message){
   try{
     await fetch("https://onesignal.com/api/v1/notifications",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Key ${ONESIGNAL_API_KEY}`},body:JSON.stringify({app_id:ONESIGNAL_APP_ID,included_segments:["All"],headings:{fr:title,en:title},contents:{fr:message,en:message},url:"https://levasseur-schubert-family-chores.vercel.app"})});
