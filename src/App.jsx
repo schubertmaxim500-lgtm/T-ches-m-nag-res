@@ -22,10 +22,6 @@ async function dbSet(patch){
     // Affiche l'erreur dans le bandeau statut
     throw new Error(`Supabase ${response.status}: ${err}`);
   }
-async function dbSet(patch){
-  await fetch(`${SUPABASE_URL}/rest/v1/fc_state?id=eq.main`,{method:"PATCH",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({...patch,updated_at:new Date().toISOString()})});
-}
-
 async function imageToBase64(file){
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
