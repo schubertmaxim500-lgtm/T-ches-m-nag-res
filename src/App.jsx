@@ -269,6 +269,7 @@ export default function App(){
     }catch(err){
       console.error("Photo error:",err);
       setUploadStatus("❌ Erreur: "+err.message);
+alert("Photo error: " + err.message);
       setTimeout(()=>setUploadStatus(""),5000);
     }
     setUploadingKeys(prev=>({...prev,[taskKey]:false}));
