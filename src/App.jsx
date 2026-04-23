@@ -35,6 +35,15 @@ async function dbLoadGages(semaine){
   if(!response.ok){const err=await response.text();throw new Error(`Supabase gages ${response.status}`);}
   return await response.json();
 }
+async function dbAddSuggestion(membre,suggestion,semaine){
+  const response=await fetch(`${SUPABASE_URL}/rest/v1/fc_suggestions`,{method:"POST",headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`,"Content-Type":"application/json",Prefer:"return=minimal"},body:JSON.stringify({membre,suggestion,semaine})});
+  if(!response.ok){const err=await response.text();throw new Error(`Supabase suggestion ${response.status}: ${err}`);}
+}
+async function dbLoadSuggestions(semaine){
+  const response=await fetch(`${SUPABASE_URL}/rest/v1/fc_suggestions?semaine=eq.${encodeURIComponent(semaine)}&order=created_at.asc`,{headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${SUPABASE_KEY}`}});
+  if(!response.ok){const err=await response.text();throw new Error(`Supabase suggestions ${response.status}`);}
+  return await response.json();
+}
 async function uploadPhotoToStorage(file){
   const ext=file.type==="image/png"?"png":"jpg";
   const filename=`photo_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
@@ -45,6 +54,8 @@ async function uploadPhotoToStorage(file){
 async function sendPushNotification(title,message){
   try{await fetch("https://onesignal.com/api/v1/notifications",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Key ${ONESIGNAL_API_KEY}`},body:JSON.stringify({app_id:ONESIGNAL_APP_ID,included_segments:["All"],headings:{fr:title,en:title},contents:{fr:message,en:message},url:"https://levasseur-schubert-family-chores.vercel.app"})});}catch(e){console.error(e);}
 }
+
+function vibrate(){if(navigator.vibrate)navigator.vibrate(50);}
 
 const DOUBLE_POINTS_TASKS=["Enlever les crottes de Tabby"];
 const SHARED_DAILY=["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
@@ -64,13 +75,11 @@ function dayKey(d=new Date()){return `${d.getFullYear()}-${d.getMonth()}-${d.get
 function weekKey(d=new Date()){const s=new Date(d.getFullYear(),0,0);return `${d.getFullYear()}-W${Math.floor((d-s)/(7*24*60*60*1000))}`;}
 function yesterdayKey(){const d=new Date();d.setDate(d.getDate()-1);return dayKey(d);}
 function msUntilNextMonday1am(){
-  const now=new Date();
+  const now=new Date();const next=new Date(now);
   const day=now.getDay();
-  const next=new Date(now);
   const daysUntil=day===1&&now.getHours()<1?0:day===0?1:(8-day)%7||7;
-  next.setDate(now.getDate()+daysUntil);
-  next.setHours(1,0,0,0);
-  if(next<=now){next.setDate(next.getDate()+7);}
+  next.setDate(now.getDate()+daysUntil);next.setHours(1,0,0,0);
+  if(next<=now)next.setDate(next.getDate()+7);
   return next-now;
 }
 function isSunday(){return new Date().getDay()===0;}
@@ -130,8 +139,12 @@ export default function App(){
   const [weekRecap,setWeekRecap]=useState(false);
   const [vendrediPopup,setVendrediPopup]=useState(false);
   const [vendrediGages,setVendrediGages]=useState([]);
+  const [vendrediSuggestions,setVendrediSuggestions]=useState([]);
   const [vendrediRessentis,setVendrediRessentis]=useState({});
   const [vendrediMsg,setVendrediMsg]=useState("");
+  const [vendrediSuggestion,setVendrediSuggestion]=useState("");
+  const [vendrediSuggestionSent,setVendrediSuggestionSent]=useState({});
+  const [showResetConfirm,setShowResetConfirm]=useState(false);
   const msgEnd=useRef(null);
   const timer=useRef(null);
   const mondayTimer=useRef(null);
@@ -139,10 +152,7 @@ export default function App(){
   const historyRef=useRef([]);
   const pointsRef=useRef({});
 
-  function scheduleMidnight(){
-    clearTimeout(timer.current);
-    timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},86400000);
-  }
+  function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},86400000);}
 
   async function resetWeek(){
     const nd={};const nu={};const np={};
@@ -154,11 +164,7 @@ export default function App(){
 
   function scheduleNextMonday(){
     clearTimeout(mondayTimer.current);
-    const ms=msUntilNextMonday1am();
-    mondayTimer.current=setTimeout(async()=>{
-      await resetWeek();
-      scheduleNextMonday();
-    },ms);
+    mondayTimer.current=setTimeout(async()=>{await resetWeek();scheduleNextMonday();},msUntilNextMonday1am());
   }
 
   async function loadFromDB(){
@@ -173,23 +179,19 @@ export default function App(){
         setTableRota(d.table_rota||{});setInitiative(d.initiative||null);
         setMessages(d.messages||[]);setUnlockedShown(d.unlocked||{});
       }
-      const np=await dbLoadPhotos(weekKey());
-      setPhotos(np);
+      const np=await dbLoadPhotos(weekKey());setPhotos(np);
     }catch(e){console.error(e);}
     setLoading(false);
   }
 
   useEffect(()=>{
-    scheduleMidnight();
-    scheduleNextMonday();
-    loadFromDB();
+    scheduleMidnight();scheduleNextMonday();loadFromDB();
     const pollTimer=setInterval(loadFromDB,10000);
     const lastWelcome=localStorage.getItem("fc_welcome_day");
     if(lastWelcome!==dayKey()){localStorage.setItem("fc_welcome_day",dayKey());setTimeout(()=>sendPushNotification("🏠 FamilyChores","Les challenges commencent aujourd'hui ! Bonne chance 💪"),3000);}
     return()=>{clearTimeout(timer.current);clearTimeout(mondayTimer.current);clearInterval(pollTimer);}
   },[]);
 
-  // Popup récapitulatif dimanche
   useEffect(()=>{
     if(loading)return;
     if(!isSunday())return;
@@ -198,17 +200,20 @@ export default function App(){
     setWeekRecap(true);
   },[loading]);
 
-  // Popup vendredi soir à partir de 18h
   useEffect(()=>{
     if(loading)return;
     if(!isFriday())return;
     if(currentHour()<18)return;
     const key=`fc_vendredi_${weekKey()}`;
     if(localStorage.getItem(key)==="done")return;
-    dbLoadGages(weekKey()).then(gages=>{
+    Promise.all([
+      dbLoadGages(weekKey()).catch(()=>[]),
+      dbLoadSuggestions(weekKey()).catch(()=>[])
+    ]).then(([gages,suggestions])=>{
       setVendrediGages(gages||[]);
+      setVendrediSuggestions(suggestions||[]);
       setVendrediPopup(true);
-    }).catch(()=>setVendrediPopup(true));
+    });
   },[loading]);
 
   useEffect(()=>{if(screen==="app"&&selectedMember){const seen=JSON.parse(localStorage.getItem("fc_seen")||"[]");if(!seen.includes(selectedMember)){setFirstLogin(true);setRulesPage(0);}}},[screen,selectedMember]);
@@ -221,12 +226,7 @@ export default function App(){
   function logout(){setScreen("home");setSelectedMember(null);setPin("");}
   function dismissRules(){const seen=JSON.parse(localStorage.getItem("fc_seen")||"[]");if(!seen.includes(selectedMember)){seen.push(selectedMember);localStorage.setItem("fc_seen",JSON.stringify(seen));}setFirstLogin(false);setRulesPage(0);}
   function dismissRecap(){localStorage.setItem(`fc_recap_${weekKey()}`,"done");setWeekRecap(false);}
-
-  function dismissVendredi(){
-    localStorage.setItem(`fc_vendredi_${weekKey()}`,"done");
-    setVendrediPopup(false);
-    setVendrediMsg("");
-  }
+  function dismissVendredi(){localStorage.setItem(`fc_vendredi_${weekKey()}`,"done");setVendrediPopup(false);setVendrediMsg("");setVendrediSuggestion("");}
 
   function sendVendrediRessenti(){
     if(!vendrediMsg.trim()||!selectedMember)return;
@@ -238,20 +238,26 @@ export default function App(){
     sendPushNotification(`📝 ${selectedMember}`,vendrediMsg.trim());
   }
 
+  async function sendVendrediSuggestion(){
+    if(!vendrediSuggestion.trim()||!selectedMember)return;
+    await dbAddSuggestion(selectedMember,vendrediSuggestion.trim(),weekKey()).catch(e=>console.error(e));
+    setVendrediSuggestions(prev=>[...prev,{membre:selectedMember,suggestion:vendrediSuggestion.trim()}]);
+    setVendrediSuggestionSent(prev=>({...prev,[selectedMember]:true}));
+    setVendrediSuggestion("");
+  }
+
   function isDoubleClick(key){const now=Date.now();const last=lastClickRef.current[key]||0;if(now-last<1000)return true;lastClickRef.current[key]=now;return false;}
 
   const handlePhotoUpload=useCallback(async(file,taskKey)=>{
     if(!file)return;
-    setUploadingKeys(prev=>({...prev,[taskKey]:true}));
-    setUploadStatus("Upload en cours...");
+    setUploadingKeys(prev=>({...prev,[taskKey]:true}));setUploadStatus("Upload en cours...");
     try{
       if(file.size>50*1024*1024){setUploadStatus("❌ Photo trop lourde (max 50MB)");setTimeout(()=>setUploadStatus(""),3000);setUploadingKeys(prev=>({...prev,[taskKey]:false}));return;}
       const photoUrl=await uploadPhotoToStorage(file);
       setUploadStatus("Sauvegarde...");
       await dbAddPhoto(taskKey,weekKey(),photoUrl);
       setPhotos(prev=>{const existing=Array.isArray(prev[taskKey])?prev[taskKey]:[];return{...prev,[taskKey]:[...existing,photoUrl]};});
-      setUploadStatus("✅ Photo ajoutée !");
-      setTimeout(()=>setUploadStatus(""),3000);
+      setUploadStatus("✅ Photo ajoutée !");setTimeout(()=>setUploadStatus(""),3000);
     }catch(err){console.error("Photo error:",err);setUploadStatus("❌ Erreur: "+err.message);setTimeout(()=>setUploadStatus(""),5000);}
     setUploadingKeys(prev=>({...prev,[taskKey]:false}));
   },[]);
@@ -261,10 +267,17 @@ export default function App(){
   const wk=weekKey();
 
   function getTableSetter(){return tableRota[wk]||null;}
+
+  // CORRECTION : calcul correct du roulement pour Michel ET Gabrielle
   function whoSetsTableToday(){
     const setter=getTableSetter();if(!setter)return null;
-    const d=new Date().getDay();const daysFromMon=d===0?6:d-1;
-    const kids=["Michel","Gabrielle"];return kids[(kids.indexOf(setter)+daysFromMon)%2];
+    const kids=["Michel","Gabrielle"];
+    const setterIdx=kids.indexOf(setter);
+    // Le setter met la table le lundi (jour 0 de la semaine)
+    // Chaque jour suivant, on alterne
+    const d=new Date().getDay(); // 0=dim,1=lun,...
+    const daysFromMon=d===0?6:d-1; // lun=0, mar=1, ..., dim=6
+    return kids[(setterIdx+daysFromMon)%2];
   }
   function whoClearsTableToday(){const s=whoSetsTableToday();return s?(s==="Michel"?"Gabrielle":"Michel"):null;}
   function getTableScheduleForWeek(){
@@ -272,6 +285,7 @@ export default function App(){
     const kids=["Michel","Gabrielle"];const setterIdx=kids.indexOf(setter);
     return["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map((day,i)=>({day,sets:kids[(setterIdx+i)%2],clears:kids[(setterIdx+i+1)%2]}));
   }
+
   function kidsCommonCount(){
     const c={Michel:0,Gabrielle:0};
     history.filter(h=>h.weekKey===wk&&h.type==="commune"&&KIDS.includes(h.member)).forEach(h=>{c[h.member]=(c[h.member]||0)+1;});
@@ -293,13 +307,18 @@ export default function App(){
     if(task==="Mettre la table"&&setter&&selectedMember!==setter){alert(`C'est ${setter} qui met la table aujourd'hui !`);return;}
     if(task==="Débarrasser la table"&&clearer&&selectedMember!==clearer){alert(`C'est ${clearer} qui débarrasse aujourd'hui !`);return;}
     const member=selectedMember;const pts=DOUBLE_POINTS_TASKS.includes(task)?2:1;
-    if(task==="Mettre la table"&&KIDS.includes(member)&&new Date().getDay()===1&&!tableRota[wk]){const nr={...tableRota,[wk]:member};setTableRota(nr);dbSet({table_rota:nr});}
+    // Enregistre le roulement le lundi si pas encore fait — accepte Michel ET Gabrielle
+    if(task==="Mettre la table"&&KIDS.includes(member)&&new Date().getDay()===1&&!tableRota[wk]){
+      const nr={...tableRota,[wk]:member};setTableRota(nr);dbSet({table_rota:nr});
+    }
     const np={...pointsRef.current,[member]:(pointsRef.current[member]||0)+pts};
     const nh=addHist({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"commune",pts});
     setPoints(np);pointsRef.current=np;setHistory(nh);historyRef.current=nh;dbSet({points:np,history:nh});
     if(COUPLE.includes(member)){setGageAlert({member,task});dbAddGage(member,task,wk).catch(e=>console.error(e));}
+    vibrate();
     sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,`${task}${pts===2?" (+2 pts)":""}`);
   }
+
   function claimCouple(task){
     if(isDoubleClick(`couple_${task}_${wk}`))return;
     if(!COUPLE.includes(selectedMember))return;
@@ -307,8 +326,10 @@ export default function App(){
     const np={...pointsRef.current,[member]:(pointsRef.current[member]||0)+1};
     const nh=addHist({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"couple"});
     setPoints(np);pointsRef.current=np;setHistory(nh);historyRef.current=nh;dbSet({points:np,history:nh});
+    vibrate();
     sendPushNotification(`${pe(member)} ${member} a fait une tâche !`,task);
   }
+
   function togglePersonal(pm,task){
     if(isDoubleClick(`personal_${pm}_${task}_${wk}`))return;
     const key=`${wk}|personal|${pm}|${task}`;
@@ -316,7 +337,9 @@ export default function App(){
     if(nd[key]){delete nd[key];np[pm]=Math.max(0,(np[pm]||0)-1);nh=historyRef.current.filter(h=>!(h.task===task&&h.member===pm&&h.weekKey===wk&&h.type==="perso"));}
     else{nd[key]=true;np[pm]=(np[pm]||0)+1;nh=addHist({member:pm,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"perso"});sendPushNotification(`${pe(pm)} ${pm} a fait une tâche !`,task);}
     setDone(nd);setPoints(np);pointsRef.current=np;setHistory(nh);historyRef.current=nh;dbSet({done:nd,points:np,history:nh});
+    vibrate();
   }
+
   function postInitiative(){
     let label;
     if(initTask==="Ranger une pièce")label=`Ranger une pièce : ${initRoom}`;
@@ -327,14 +350,21 @@ export default function App(){
     sendPushNotification("⭐ Nouvelle initiative !",`${selectedMember} a posté : ${label} (+2 pts)`);
   }
   function acceptInitiative(){const ni={...initiative,acceptedBy:selectedMember};setInitiative(ni);dbSet({initiative:ni});}
+
+  // CORRECTION : le membre qui complète reçoit les points
+  // que ce soit acceptedBy OU postedBy (si complété sans acceptation)
   function completeInitiative(){
-    const member=initiative.acceptedBy;
+    const member=initiative.acceptedBy||initiative.postedBy;
     const np={...pointsRef.current,[member]:(pointsRef.current[member]||0)+2};
     const nh=addHist({member,task:`⭐ ${initiative.task}`,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"initiative"});
-    setPoints(np);pointsRef.current=np;setHistory(nh);historyRef.current=nh;setInitiative(null);dbSet({points:np,history:nh,initiative:null});
+    setPoints(np);pointsRef.current=np;setHistory(nh);historyRef.current=nh;setInitiative(null);
+    dbSet({points:np,history:nh,initiative:null});
+    vibrate();
     sendPushNotification(`🏆 ${member} a terminé l'initiative !`,`${initiative.task} (+2 pts)`);
   }
+
   function cancelInitiative(){setInitiative(null);dbSet({initiative:null});}
+
   function sendMessage(){
     if(!newMsg.trim())return;
     const nm=[...messages,{from:selectedMember,text:newMsg.trim(),date:new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),day:new Date().toLocaleDateString("fr-FR")}].slice(-100);
@@ -376,12 +406,11 @@ export default function App(){
         </div>
       </div>
 
-      {/* Popup récapitulatif dimanche */}
       {weekRecap&&(()=>{const recap=buildRecap();return(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}}>
           <div style={{background:"#fff",borderRadius:24,padding:"1.5rem",width:"100%",maxWidth:380,maxHeight:"85vh",overflowY:"auto"}}>
             <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:40,marginBottom:6}}>📋</div><h3 style={{fontWeight:700,fontSize:18,color:"#1a1a2e",margin:"0 0 4px"}}>Récapitulatif de la semaine</h3><p style={{fontSize:13,color:"#aaa",margin:0}}>Bilan du dimanche</p></div>
-            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>⚔️ Compétition Michel vs Gabrielle</p><div style={{display:"flex",justifyContent:"space-around",marginBottom:6}}><span style={{fontSize:14,fontWeight:700,color:pc("Michel")}}>{pe("Michel")} Michel : {recap.mS}</span><span style={{fontSize:14,fontWeight:700,color:pc("Gabrielle")}}>Gabrielle : {recap.gS} {pe("Gabrielle")}</span></div>{recap.winner?<p style={{fontSize:13,color:"#16A34A",fontWeight:700,textAlign:"center",margin:0}}>🏆 {recap.winner} gagne cette semaine !</p>:<p style={{fontSize:13,color:"#888",textAlign:"center",margin:0}}>Égalité !</p>}</div>
+            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>⚔️ Compétition Michel vs Gabrielle</p><div style={{display:"flex",justifyContent:"space-around",marginBottom:6}}><span style={{fontSize:14,fontWeight:700,color:pc("Michel")}}>{pe("Michel")} Michel : {recap.mS}</span><span style={{fontSize:14,fontWeight:700,color:pc("Gabrielle")}}>Gabrielle : {recap.gS} {pe("Gabrielle")}</span></div>{recap.winner?<p style={{fontSize:13,color:"#16A34A",fontWeight:700,textAlign:"center",margin:0}}>🏆 {recap.winner} gagne !</p>:<p style={{fontSize:13,color:"#888",textAlign:"center",margin:0}}>Égalité !</p>}</div>
             <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>🏆 Challenges personnels</p>{KIDS.map(kid=>{const kc=recap.kidsChallenge[kid];return(<div key={kid} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{fontSize:16}}>{pe(kid)}</span><span style={{fontSize:13,fontWeight:600,color:pc(kid),flex:1}}>{kid}</span><span style={{fontSize:13,color:kc.success?"#16A34A":"#ef4444",fontWeight:700}}>{kc.success?"✅ Réussi !":`${kc.done}/${kc.total}`}</span></div>);})}</div>
             <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:16}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>✅ Tâches & points</p>{Object.keys(profiles).map(m=>{const stat=recap.memberStats[m];return(<div key={m} style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}><span style={{fontSize:14}}>{pe(m)}</span><span style={{fontSize:13,fontWeight:700,color:pc(m),flex:1}}>{m}</span><span style={{fontSize:12,color:"#888"}}>{stat.total} tâche{stat.total>1?"s":""}</span><span style={{fontSize:13,fontWeight:700,color:pc(m),marginLeft:8}}>{stat.pts} pts</span></div>);})}</div>
             <button onClick={dismissRecap} style={{width:"100%",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:16,padding:"14px",fontWeight:700,fontSize:15,cursor:"pointer"}}>C'est noté ! 👍</button>
@@ -389,51 +418,17 @@ export default function App(){
         </div>
       );})()}
 
-      {/* Popup vendredi soir */}
       {vendrediPopup&&(()=>{const recap=buildRecap();return(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}}>
           <div style={{background:"#fff",borderRadius:24,padding:"1.5rem",width:"100%",maxWidth:380,maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:40,marginBottom:6}}>📊</div><h3 style={{fontWeight:700,fontSize:18,color:"#1a1a2e",margin:"0 0 4px"}}>Bilan de la semaine</h3><p style={{fontSize:13,color:"#aaa",margin:0}}>Vendredi soir — résumé familial</p></div>
-
-            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}>
-              <p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 10px"}}>🏅 Points & tâches</p>
-              {Object.keys(profiles).map(m=>{const stat=recap.memberStats[m];const c=pc(m);return(<div key={m} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,padding:"8px",background:"#fff",borderRadius:12}}><span style={{fontSize:18}}>{pe(m)}</span><span style={{fontSize:13,fontWeight:700,color:c,flex:1}}>{m}</span><span style={{fontSize:12,color:"#888"}}>{stat.total} tâche{stat.total>1?"s":""}</span><span style={{fontSize:13,fontWeight:700,color:c,marginLeft:8}}>{stat.pts} pts</span></div>);})}
+            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 10px"}}>🏅 Points & tâches</p>{Object.keys(profiles).map(m=>{const stat=recap.memberStats[m];const c=pc(m);return(<div key={m} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,padding:"8px",background:"#fff",borderRadius:12}}><span style={{fontSize:18}}>{pe(m)}</span><span style={{fontSize:13,fontWeight:700,color:c,flex:1}}>{m}</span><span style={{fontSize:12,color:"#888"}}>{stat.total} tâche{stat.total>1?"s":""}</span><span style={{fontSize:13,fontWeight:700,color:c,marginLeft:8}}>{stat.pts} pts</span></div>);})}
             </div>
-
-            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}>
-              <p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>⚔️ Compétition Michel vs Gabrielle</p>
-              <div style={{display:"flex",justifyContent:"space-around",marginBottom:6}}><span style={{fontSize:14,fontWeight:700,color:pc("Michel")}}>{pe("Michel")} Michel : {recap.mS}</span><span style={{fontSize:14,fontWeight:700,color:pc("Gabrielle")}}>Gabrielle : {recap.gS} {pe("Gabrielle")}</span></div>
-              {recap.winner?<p style={{fontSize:13,color:"#16A34A",fontWeight:700,textAlign:"center",margin:0}}>🏆 {recap.winner} est en tête !</p>:<p style={{fontSize:13,color:"#888",textAlign:"center",margin:0}}>Égalité !</p>}
-            </div>
-
-            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}>
-              <p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>🏆 Challenges personnels</p>
-              {KIDS.map(kid=>{const kc=recap.kidsChallenge[kid];return(<div key={kid} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,padding:"6px 8px",background:"#fff",borderRadius:10}}><span style={{fontSize:16}}>{pe(kid)}</span><span style={{fontSize:13,fontWeight:600,color:pc(kid),flex:1}}>{kid}</span><span style={{fontSize:12,color:"#888"}}>{kc.done}/{kc.total}</span><span style={{fontSize:13,color:kc.success?"#16A34A":"#ef4444",fontWeight:700,marginLeft:8}}>{kc.success?"✅":"⏳"}</span></div>);})}
-            </div>
-
-            <div style={{background:"#FFF5F5",borderRadius:16,padding:"12px",marginBottom:12,border:"1.5px solid #FEE2E2"}}>
-              <p style={{fontWeight:700,fontSize:14,color:"#DC2626",margin:"0 0 8px"}}>😬 Gages de la semaine</p>
-              {vendrediGages.length===0
-                ?<p style={{fontSize:13,color:"#888",margin:0}}>Aucun gage cette semaine ! 🎉</p>
-                :vendrediGages.map((g,i)=>(<div key={i} style={{background:"#fff",borderRadius:10,padding:"8px 10px",marginBottom:6}}><p style={{fontSize:13,fontWeight:700,color:pc(g.membre_fautif),margin:"0 0 2px"}}>{pe(g.membre_fautif)} {g.membre_fautif}</p><p style={{fontSize:12,color:"#888",margin:0}}>a fait à la place des enfants : <strong>{g.tache}</strong></p><p style={{fontSize:11,color:"#ccc",margin:"2px 0 0"}}>→ Michel & Gabrielle ont un gage !</p></div>))
-              }
-            </div>
-
-            {/* Ressenti de la semaine */}
-            <div style={{background:"#f0f7ff",borderRadius:16,padding:"12px",marginBottom:16,border:"1.5px solid #bfdbfe"}}>
-              <p style={{fontWeight:700,fontSize:14,color:"#1d4ed8",margin:"0 0 8px"}}>💬 Ton ressenti de la semaine</p>
-              <p style={{fontSize:12,color:"#888",margin:"0 0 10px"}}>Optionnel — partage quelque chose avec la famille</p>
-              {selectedMember
-                ?vendrediRessentis[selectedMember]
-                  ?<p style={{fontSize:13,color:"#16A34A",fontWeight:600,margin:0}}>✅ Ressenti envoyé dans la messagerie !</p>
-                  :(<div style={{display:"flex",gap:8}}>
-                      <input value={vendrediMsg} onChange={e=>setVendrediMsg(e.target.value)} placeholder="Comment s'est passée ta semaine ?" style={{flex:1,fontSize:13,padding:"8px 12px",borderRadius:12,border:"1.5px solid #bfdbfe",background:"#fff",fontFamily:"inherit"}}/>
-                      <button onClick={sendVendrediRessenti} disabled={!vendrediMsg.trim()} style={{padding:"8px 14px",borderRadius:12,background:"#1d4ed8",color:"#fff",border:"none",fontWeight:700,fontSize:13,cursor:"pointer",opacity:vendrediMsg.trim()?1:0.5}}>Envoyer</button>
-                    </div>)
-                :<p style={{fontSize:12,color:"#aaa",margin:0}}>Connecte-toi à ton profil pour partager ton ressenti.</p>
-              }
-            </div>
-
+            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>⚔️ Compétition Michel vs Gabrielle</p><div style={{display:"flex",justifyContent:"space-around",marginBottom:6}}><span style={{fontSize:14,fontWeight:700,color:pc("Michel")}}>{pe("Michel")} Michel : {recap.mS}</span><span style={{fontSize:14,fontWeight:700,color:pc("Gabrielle")}}>Gabrielle : {recap.gS} {pe("Gabrielle")}</span></div>{recap.winner?<p style={{fontSize:13,color:"#16A34A",fontWeight:700,textAlign:"center",margin:0}}>🏆 {recap.winner} est en tête !</p>:<p style={{fontSize:13,color:"#888",textAlign:"center",margin:0}}>Égalité !</p>}</div>
+            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>🏆 Challenges personnels</p>{KIDS.map(kid=>{const kc=recap.kidsChallenge[kid];return(<div key={kid} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,padding:"6px 8px",background:"#fff",borderRadius:10}}><span style={{fontSize:16}}>{pe(kid)}</span><span style={{fontSize:13,fontWeight:600,color:pc(kid),flex:1}}>{kid}</span><span style={{fontSize:12,color:"#888"}}>{kc.done}/{kc.total}</span><span style={{fontSize:13,color:kc.success?"#16A34A":"#ef4444",fontWeight:700,marginLeft:8}}>{kc.success?"✅":"⏳"}</span></div>);})}</div>
+            <div style={{background:"#FFF5F5",borderRadius:16,padding:"12px",marginBottom:12,border:"1.5px solid #FEE2E2"}}><p style={{fontWeight:700,fontSize:14,color:"#DC2626",margin:"0 0 8px"}}>😬 Gages de la semaine</p>{vendrediGages.length===0?<p style={{fontSize:13,color:"#888",margin:0}}>Aucun gage cette semaine ! 🎉</p>:vendrediGages.map((g,i)=>(<div key={i} style={{background:"#fff",borderRadius:10,padding:"8px 10px",marginBottom:6}}><p style={{fontSize:13,fontWeight:700,color:pc(g.membre_fautif),margin:"0 0 2px"}}>{pe(g.membre_fautif)} {g.membre_fautif}</p><p style={{fontSize:12,color:"#888",margin:0}}>a fait à la place des enfants : <strong>{g.tache}</strong></p><p style={{fontSize:11,color:"#ccc",margin:"2px 0 0"}}>→ Michel & Gabrielle ont un gage !</p></div>))}</div>
+            <div style={{background:"#f0f7ff",borderRadius:16,padding:"12px",marginBottom:12,border:"1.5px solid #bfdbfe"}}><p style={{fontWeight:700,fontSize:14,color:"#1d4ed8",margin:"0 0 6px"}}>💬 Ton ressenti de la semaine</p><p style={{fontSize:12,color:"#888",margin:"0 0 10px"}}>Optionnel — partage quelque chose avec la famille</p>{selectedMember?vendrediRessentis[selectedMember]?<p style={{fontSize:13,color:"#16A34A",fontWeight:600,margin:0}}>✅ Ressenti envoyé !</p>:(<div style={{display:"flex",gap:8}}><input value={vendrediMsg} onChange={e=>setVendrediMsg(e.target.value)} placeholder="Comment s'est passée ta semaine ?" style={{flex:1,fontSize:13,padding:"8px 12px",borderRadius:12,border:"1.5px solid #bfdbfe",background:"#fff",fontFamily:"inherit"}}/><button onClick={sendVendrediRessenti} disabled={!vendrediMsg.trim()} style={{padding:"8px 14px",borderRadius:12,background:"#1d4ed8",color:"#fff",border:"none",fontWeight:700,fontSize:13,cursor:"pointer",opacity:vendrediMsg.trim()?1:0.5}}>Envoyer</button></div>):<p style={{fontSize:12,color:"#aaa",margin:0}}>Connecte-toi à ton profil pour partager.</p>}</div>
+            <div style={{background:"#f0fdf4",borderRadius:16,padding:"12px",marginBottom:16,border:"1.5px solid #bbf7d0"}}><p style={{fontWeight:700,fontSize:14,color:"#15803d",margin:"0 0 6px"}}>💡 Tu aimerais modifier quelque chose ?</p><p style={{fontSize:12,color:"#888",margin:"0 0 10px"}}>Une idée pour améliorer FamilyChores ?</p>{selectedMember?vendrediSuggestionSent[selectedMember]?<p style={{fontSize:13,color:"#16A34A",fontWeight:600,margin:0}}>✅ Suggestion envoyée !</p>:(<div style={{display:"flex",gap:8}}><input value={vendrediSuggestion} onChange={e=>setVendrediSuggestion(e.target.value)} placeholder="Ton idée ou suggestion..." style={{flex:1,fontSize:13,padding:"8px 12px",borderRadius:12,border:"1.5px solid #bbf7d0",background:"#fff",fontFamily:"inherit"}}/><button onClick={sendVendrediSuggestion} disabled={!vendrediSuggestion.trim()} style={{padding:"8px 14px",borderRadius:12,background:"#15803d",color:"#fff",border:"none",fontWeight:700,fontSize:13,cursor:"pointer",opacity:vendrediSuggestion.trim()?1:0.5}}>Envoyer</button></div>):<p style={{fontSize:12,color:"#aaa",margin:0}}>Connecte-toi à ton profil pour suggérer.</p>}{vendrediSuggestions.length>0&&(<div style={{marginTop:10}}><p style={{fontSize:12,fontWeight:700,color:"#15803d",margin:"0 0 6px"}}>Suggestions reçues :</p>{vendrediSuggestions.map((s,i)=>(<div key={i} style={{background:"#fff",borderRadius:10,padding:"6px 10px",marginBottom:4}}><span style={{fontSize:12,fontWeight:700,color:pc(s.membre)}}>{pe(s.membre)} {s.membre} : </span><span style={{fontSize:12,color:"#555"}}>{s.suggestion}</span></div>))}</div>)}</div>
             <button onClick={dismissVendredi} style={{width:"100%",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:16,padding:"14px",fontWeight:700,fontSize:15,cursor:"pointer"}}>Lu ✓</button>
           </div>
         </div>
@@ -547,7 +542,12 @@ export default function App(){
 
       {gageAlert&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:"1rem"}} onClick={()=>setGageAlert(null)}><div style={{background:"#fff",borderRadius:24,padding:"1.75rem",width:"100%",maxWidth:340,textAlign:"center"}} onClick={e=>e.stopPropagation()}><div style={{fontSize:48,marginBottom:8}}>😬</div><h3 style={{fontWeight:700,fontSize:18,color:"#1a1a2e",margin:"0 0 8px"}}>Gage pour Michel &amp; Gabrielle !</h3><p style={{fontSize:14,color:"#888",margin:"0 0 6px"}}><strong style={{color:pc(gageAlert.member)}}>{gageAlert.member}</strong> a fait :</p><p style={{fontSize:14,fontWeight:700,background:"#f5f5f7",borderRadius:12,padding:"10px",margin:"0 0 16px"}}>"{gageAlert.task}"</p><p style={{fontSize:13,color:"#aaa",margin:"0 0 20px"}}>La famille décide ensemble du gage !</p><button onClick={()=>setGageAlert(null)} style={{width:"100%",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:16,padding:"14px",fontWeight:700,fontSize:15,cursor:"pointer"}}>OK, on décide !</button></div></div>)}
 
-      {editingProfile&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}} onClick={()=>setEditingProfile(false)}><div style={{width:"100%",maxWidth:480,background:"#fff",borderRadius:"24px 24px 0 0",padding:"1.5rem 1.25rem 2.5rem"}} onClick={e=>e.stopPropagation()}><div style={{width:40,height:4,borderRadius:2,background:"#e0e0e0",margin:"0 auto 1.25rem"}}/><p style={{fontWeight:700,fontSize:17,color:"#1a1a2e",margin:"0 0 1.25rem"}}>Mon profil</p><p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Mon emoji</p><div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>{EMOJI_OPTIONS.map(em=><button key={em} onClick={()=>setEditEmoji(em)} style={{width:44,height:44,borderRadius:12,border:editEmoji===em?`2.5px solid ${editColor}`:"1.5px solid #eee",background:editEmoji===em?`${editColor}15`:"#fafafa",fontSize:22,cursor:"pointer"}}>{em}</button>)}</div><p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Ma couleur</p><div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>{COLOR_OPTIONS.map(c=><button key={c} onClick={()=>setEditColor(c)} style={{width:38,height:38,borderRadius:19,background:c,border:editColor===c?"3px solid #1a1a2e":"3px solid transparent",cursor:"pointer"}}/>)}</div><p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Code PIN (4 chiffres)</p><input value={editPin} onChange={e=>setEditPin(e.target.value.replace(/\D/g,"").slice(0,4))} maxLength={4} placeholder="0000" style={{width:"100%",fontSize:20,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box",letterSpacing:8,textAlign:"center",fontFamily:"inherit"}}/>{KIDS.includes(selectedMember)&&(<><p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Récompense challenge</p><input value={editReward} onChange={e=>setEditReward(e.target.value)} placeholder="Ex : Sortie cinéma, bonbons..." style={{width:"100%",fontSize:14,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box",fontFamily:"inherit"}}/></>)}<button onClick={saveProfile} style={{width:"100%",background:editColor,color:"#fff",border:"none",borderRadius:16,padding:"15px",fontWeight:700,fontSize:15,cursor:"pointer"}}>Enregistrer</button></div></div>)}
+      {showResetConfirm&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:600,padding:"1rem"}}><div style={{background:"#fff",borderRadius:24,padding:"1.75rem",width:"100%",maxWidth:340,textAlign:"center"}}><div style={{fontSize:48,marginBottom:8}}>⚠️</div><h3 style={{fontWeight:700,fontSize:18,color:"#1a1a2e",margin:"0 0 8px"}}>Réinitialiser la semaine ?</h3><p style={{fontSize:14,color:"#888",margin:"0 0 20px"}}>Cette action remet à zéro les points, les tâches cochées et le roulement de table. L'historique est conservé.</p><div style={{display:"flex",gap:10}}><button onClick={()=>setShowResetConfirm(false)} style={{flex:1,background:"#f5f5f7",color:"#1a1a2e",border:"none",borderRadius:16,padding:"13px",fontWeight:600,fontSize:14,cursor:"pointer"}}>Annuler</button><button onClick={async()=>{await resetWeek();setShowResetConfirm(false);}} style={{flex:1,background:"#ef4444",color:"#fff",border:"none",borderRadius:16,padding:"13px",fontWeight:700,fontSize:14,cursor:"pointer"}}>Confirmer</button></div></div></div>)}
+
+      {editingProfile&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:200}} onClick={()=>setEditingProfile(false)}><div style={{width:"100%",maxWidth:480,background:"#fff",borderRadius:"24px 24px 0 0",padding:"1.5rem 1.25rem 2.5rem"}} onClick={e=>e.stopPropagation()}><div style={{width:40,height:4,borderRadius:2,background:"#e0e0e0",margin:"0 auto 1.25rem"}}/><p style={{fontWeight:700,fontSize:17,color:"#1a1a2e",margin:"0 0 1.25rem"}}>Mon profil</p><p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Mon emoji</p><div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>{EMOJI_OPTIONS.map(em=><button key={em} onClick={()=>setEditEmoji(em)} style={{width:44,height:44,borderRadius:12,border:editEmoji===em?`2.5px solid ${editColor}`:"1.5px solid #eee",background:editEmoji===em?`${editColor}15`:"#fafafa",fontSize:22,cursor:"pointer"}}>{em}</button>)}</div><p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Ma couleur</p><div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>{COLOR_OPTIONS.map(c=><button key={c} onClick={()=>setEditColor(c)} style={{width:38,height:38,borderRadius:19,background:c,border:editColor===c?"3px solid #1a1a2e":"3px solid transparent",cursor:"pointer"}}/>)}</div><p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Code PIN (4 chiffres)</p><input value={editPin} onChange={e=>setEditPin(e.target.value.replace(/\D/g,"").slice(0,4))} maxLength={4} placeholder="0000" style={{width:"100%",fontSize:20,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box",letterSpacing:8,textAlign:"center",fontFamily:"inherit"}}/>{KIDS.includes(selectedMember)&&(<><p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>Récompense challenge</p><input value={editReward} onChange={e=>setEditReward(e.target.value)} placeholder="Ex : Sortie cinéma, bonbons..." style={{width:"100%",fontSize:14,padding:"10px 14px",borderRadius:14,border:"1.5px solid #eee",marginBottom:16,boxSizing:"border-box",fontFamily:"inherit"}}/></>)}
+        {selectedMember==="Papou"&&(<><div style={{height:1,background:"#f0f0f5",margin:"8px 0 16px"}}/><p style={{fontSize:13,fontWeight:600,color:"#888",margin:"0 0 8px"}}>🔧 Administration</p><button onClick={()=>{setEditingProfile(false);setShowResetConfirm(true);}} style={{width:"100%",background:"#FEF2F2",color:"#ef4444",border:"1.5px solid #FEE2E2",borderRadius:14,padding:"12px",fontWeight:700,fontSize:14,cursor:"pointer",marginBottom:8}}>🔄 Réinitialiser la semaine</button></>)}
+        <button onClick={saveProfile} style={{width:"100%",background:editColor,color:"#fff",border:"none",borderRadius:16,padding:"15px",fontWeight:700,fontSize:15,cursor:"pointer"}}>Enregistrer</button>
+      </div></div>)}
     </div>
   );
 }
