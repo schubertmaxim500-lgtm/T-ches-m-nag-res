@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-
+ 
 const SUPABASE_URL = "https://nbxiydhjlhjvuaggaxve.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ieGl5ZGhqbGhqdnVhZ2dheHZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDkyODQsImV4cCI6MjA5MDMyNTI4NH0.W8iP9cfhp-6kxopZ4-qI5YnwTceDW1Ymatodx5BvEgQ";
 const SUPABASE_BUCKET = "task-photos";
