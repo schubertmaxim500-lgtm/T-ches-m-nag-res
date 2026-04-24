@@ -52,6 +52,7 @@ async function uploadPhotoToStorage(file){
   return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${filename}`;
 }
 async function sendPushNotification(title,message){
+  console.log("Clé OneSignal :", ONESIGNAL_API_KEY)
   try{await fetch("https://onesignal.com/api/v1/notifications",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Key ${ONESIGNAL_API_KEY}`},body:JSON.stringify({app_id:ONESIGNAL_APP_ID,included_segments:["All"],headings:{fr:title,en:title},contents:{fr:message,en:message},url:"https://levasseur-schubert-family-chores.vercel.app"})});}catch(e){console.error(e);}
 }
 
