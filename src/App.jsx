@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
- 
+
 const SUPABASE_URL = "https://nbxiydhjlhjvuaggaxve.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ieGl5ZGhqbGhqdnVhZ2dheHZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDkyODQsImV4cCI6MjA5MDMyNTI4NH0.W8iP9cfhp-6kxopZ4-qI5YnwTceDW1Ymatodx5BvEgQ";
 const SUPABASE_BUCKET = "task-photos";
@@ -52,12 +52,12 @@ async function uploadPhotoToStorage(file){
   return `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${filename}`;
 }
 async function sendPushNotification(title,message){
-  console.log("Clé OneSignal :", ONESIGNAL_API_KEY)
   try{await fetch("https://onesignal.com/api/v1/notifications",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Key ${ONESIGNAL_API_KEY}`},body:JSON.stringify({app_id:ONESIGNAL_APP_ID,included_segments:["All"],headings:{fr:title,en:title},contents:{fr:message,en:message},url:"https://levasseur-schubert-family-chores.vercel.app"})});}catch(e){console.error(e);}
 }
 
 function vibrate(){if(navigator.vibrate)navigator.vibrate(50);}
 
+const DOUBLE_CLICK_DELAY=2000;
 const DOUBLE_POINTS_TASKS=["Enlever les crottes de Tabby"];
 const SHARED_DAILY=["Remplir le lave-vaisselle","Vider le lave-vaisselle","Sortir les poubelles","Mettre la table","Débarrasser la table","Donner à manger et à boire à Tabby","Enlever les crottes de Tabby"];
 const COUPLE_POOL=["Passer l'aspirateur","Passer le mop","Faire une machine à laver","Etendre le linge","Plier le linge"];
@@ -75,14 +75,6 @@ const RULES=[{emoji:"🏠",title:"Tâches hebdomadaires Michel & Gabrielle",desc
 function dayKey(d=new Date()){return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;}
 function weekKey(d=new Date()){const s=new Date(d.getFullYear(),0,0);return `${d.getFullYear()}-W${Math.floor((d-s)/(7*24*60*60*1000))}`;}
 function yesterdayKey(){const d=new Date();d.setDate(d.getDate()-1);return dayKey(d);}
-function msUntilNextMonday1am(){
-  const now=new Date();const next=new Date(now);
-  const day=now.getDay();
-  const daysUntil=day===1&&now.getHours()<1?0:day===0?1:(8-day)%7||7;
-  next.setDate(now.getDate()+daysUntil);next.setHours(1,0,0,0);
-  if(next<=now)next.setDate(next.getDate()+7);
-  return next-now;
-}
 function isSunday(){return new Date().getDay()===0;}
 function isFriday(){return new Date().getDay()===5;}
 function currentHour(){return new Date().getHours();}
@@ -146,26 +138,23 @@ export default function App(){
   const [vendrediSuggestion,setVendrediSuggestion]=useState("");
   const [vendrediSuggestionSent,setVendrediSuggestionSent]=useState({});
   const [showResetConfirm,setShowResetConfirm]=useState(false);
+  // Anti double-clic : stocke les clés bloquées
+  const [blockedKeys,setBlockedKeys]=useState({});
   const msgEnd=useRef(null);
   const timer=useRef(null);
-  const mondayTimer=useRef(null);
   const lastClickRef=useRef({});
   const historyRef=useRef([]);
   const pointsRef=useRef({});
+  const pollTimerRef=useRef(null);
 
   function scheduleMidnight(){clearTimeout(timer.current);timer.current=setTimeout(()=>{setToday(dayKey());scheduleMidnight();},86400000);}
 
   async function resetWeek(){
     const nd={};const nu={};const np={};
-    setDone(nd);setPoints(np);setUnlockedShown(nu);setTableRota({});setInitiative(null);
-    pointsRef.current=np;
     await dbSet({done:nd,points:np,unlocked:nu,table_rota:{},initiative:null});
     sendPushNotification("🏠 FamilyChores","Nouvelle semaine ! Les points sont remis à zéro 🚀");
-  }
-
-  function scheduleNextMonday(){
-    clearTimeout(mondayTimer.current);
-    mondayTimer.current=setTimeout(async()=>{await resetWeek();scheduleNextMonday();},msUntilNextMonday1am());
+    // Rechargement complet pour vider la mémoire
+    setTimeout(()=>window.location.reload(),500);
   }
 
   async function loadFromDB(){
@@ -186,11 +175,12 @@ export default function App(){
   }
 
   useEffect(()=>{
-    scheduleMidnight();scheduleNextMonday();loadFromDB();
-    const pollTimer=setInterval(loadFromDB,10000);
+    scheduleMidnight();
+    loadFromDB();
+    pollTimerRef.current=setInterval(loadFromDB,10000);
     const lastWelcome=localStorage.getItem("fc_welcome_day");
     if(lastWelcome!==dayKey()){localStorage.setItem("fc_welcome_day",dayKey());setTimeout(()=>sendPushNotification("🏠 FamilyChores","Les challenges commencent aujourd'hui ! Bonne chance 💪"),3000);}
-    return()=>{clearTimeout(timer.current);clearTimeout(mondayTimer.current);clearInterval(pollTimer);}
+    return()=>{clearTimeout(timer.current);clearInterval(pollTimerRef.current);}
   },[]);
 
   useEffect(()=>{
@@ -247,7 +237,17 @@ export default function App(){
     setVendrediSuggestion("");
   }
 
-  function isDoubleClick(key){const now=Date.now();const last=lastClickRef.current[key]||0;if(now-last<1000)return true;lastClickRef.current[key]=now;return false;}
+  // Anti double-clic amélioré — 2 secondes + blocage visuel
+  function isDoubleClick(key){
+    const now=Date.now();
+    const last=lastClickRef.current[key]||0;
+    if(now-last<DOUBLE_CLICK_DELAY)return true;
+    lastClickRef.current[key]=now;
+    // Blocage visuel 2 secondes
+    setBlockedKeys(prev=>({...prev,[key]:true}));
+    setTimeout(()=>setBlockedKeys(prev=>{const n={...prev};delete n[key];return n;}),DOUBLE_CLICK_DELAY);
+    return false;
+  }
 
   const handlePhotoUpload=useCallback(async(file,taskKey)=>{
     if(!file)return;
@@ -268,17 +268,11 @@ export default function App(){
   const wk=weekKey();
 
   function getTableSetter(){return tableRota[wk]||null;}
-
-  // CORRECTION : calcul correct du roulement pour Michel ET Gabrielle
   function whoSetsTableToday(){
     const setter=getTableSetter();if(!setter)return null;
     const kids=["Michel","Gabrielle"];
-    const setterIdx=kids.indexOf(setter);
-    // Le setter met la table le lundi (jour 0 de la semaine)
-    // Chaque jour suivant, on alterne
-    const d=new Date().getDay(); // 0=dim,1=lun,...
-    const daysFromMon=d===0?6:d-1; // lun=0, mar=1, ..., dim=6
-    return kids[(setterIdx+daysFromMon)%2];
+    const d=new Date().getDay();const daysFromMon=d===0?6:d-1;
+    return kids[(kids.indexOf(setter)+daysFromMon)%2];
   }
   function whoClearsTableToday(){const s=whoSetsTableToday();return s?(s==="Michel"?"Gabrielle":"Michel"):null;}
   function getTableScheduleForWeek(){
@@ -286,7 +280,6 @@ export default function App(){
     const kids=["Michel","Gabrielle"];const setterIdx=kids.indexOf(setter);
     return["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"].map((day,i)=>({day,sets:kids[(setterIdx+i)%2],clears:kids[(setterIdx+i+1)%2]}));
   }
-
   function kidsCommonCount(){
     const c={Michel:0,Gabrielle:0};
     history.filter(h=>h.weekKey===wk&&h.type==="commune"&&KIDS.includes(h.member)).forEach(h=>{c[h.member]=(c[h.member]||0)+1;});
@@ -303,15 +296,13 @@ export default function App(){
   }
 
   function claimShared(task){
-    if(isDoubleClick(`shared_${task}_${today}`))return;
+    const key=`shared_${task}_${today}`;
+    if(blockedKeys[key]||isDoubleClick(key))return;
     const setter=whoSetsTableToday();const clearer=whoClearsTableToday();
     if(task==="Mettre la table"&&setter&&selectedMember!==setter){alert(`C'est ${setter} qui met la table aujourd'hui !`);return;}
     if(task==="Débarrasser la table"&&clearer&&selectedMember!==clearer){alert(`C'est ${clearer} qui débarrasse aujourd'hui !`);return;}
     const member=selectedMember;const pts=DOUBLE_POINTS_TASKS.includes(task)?2:1;
-    // Enregistre le roulement le lundi si pas encore fait — accepte Michel ET Gabrielle
-    if(task==="Mettre la table"&&KIDS.includes(member)&&new Date().getDay()===1&&!tableRota[wk]){
-      const nr={...tableRota,[wk]:member};setTableRota(nr);dbSet({table_rota:nr});
-    }
+    if(task==="Mettre la table"&&KIDS.includes(member)&&new Date().getDay()===1&&!tableRota[wk]){const nr={...tableRota,[wk]:member};setTableRota(nr);dbSet({table_rota:nr});}
     const np={...pointsRef.current,[member]:(pointsRef.current[member]||0)+pts};
     const nh=addHist({member,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"commune",pts});
     setPoints(np);pointsRef.current=np;setHistory(nh);historyRef.current=nh;dbSet({points:np,history:nh});
@@ -321,7 +312,8 @@ export default function App(){
   }
 
   function claimCouple(task){
-    if(isDoubleClick(`couple_${task}_${wk}`))return;
+    const key=`couple_${task}_${wk}`;
+    if(blockedKeys[key]||isDoubleClick(key))return;
     if(!COUPLE.includes(selectedMember))return;
     const member=selectedMember;
     const np={...pointsRef.current,[member]:(pointsRef.current[member]||0)+1};
@@ -332,11 +324,12 @@ export default function App(){
   }
 
   function togglePersonal(pm,task){
-    if(isDoubleClick(`personal_${pm}_${task}_${wk}`))return;
-    const key=`${wk}|personal|${pm}|${task}`;
+    const key=`personal_${pm}_${task}_${wk}`;
+    if(blockedKeys[key]||isDoubleClick(key))return;
+    const doneKey=`${wk}|personal|${pm}|${task}`;
     let nd={...done},np={...pointsRef.current},nh;
-    if(nd[key]){delete nd[key];np[pm]=Math.max(0,(np[pm]||0)-1);nh=historyRef.current.filter(h=>!(h.task===task&&h.member===pm&&h.weekKey===wk&&h.type==="perso"));}
-    else{nd[key]=true;np[pm]=(np[pm]||0)+1;nh=addHist({member:pm,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"perso"});sendPushNotification(`${pe(pm)} ${pm} a fait une tâche !`,task);}
+    if(nd[doneKey]){delete nd[doneKey];np[pm]=Math.max(0,(np[pm]||0)-1);nh=historyRef.current.filter(h=>!(h.task===task&&h.member===pm&&h.weekKey===wk&&h.type==="perso"));}
+    else{nd[doneKey]=true;np[pm]=(np[pm]||0)+1;nh=addHist({member:pm,task,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"perso"});sendPushNotification(`${pe(pm)} ${pm} a fait une tâche !`,task);}
     setDone(nd);setPoints(np);pointsRef.current=np;setHistory(nh);historyRef.current=nh;dbSet({done:nd,points:np,history:nh});
     vibrate();
   }
@@ -351,9 +344,6 @@ export default function App(){
     sendPushNotification("⭐ Nouvelle initiative !",`${selectedMember} a posté : ${label} (+2 pts)`);
   }
   function acceptInitiative(){const ni={...initiative,acceptedBy:selectedMember};setInitiative(ni);dbSet({initiative:ni});}
-
-  // CORRECTION : le membre qui complète reçoit les points
-  // que ce soit acceptedBy OU postedBy (si complété sans acceptation)
   function completeInitiative(){
     const member=initiative.acceptedBy||initiative.postedBy;
     const np={...pointsRef.current,[member]:(pointsRef.current[member]||0)+2};
@@ -363,9 +353,7 @@ export default function App(){
     vibrate();
     sendPushNotification(`🏆 ${member} a terminé l'initiative !`,`${initiative.task} (+2 pts)`);
   }
-
   function cancelInitiative(){setInitiative(null);dbSet({initiative:null});}
-
   function sendMessage(){
     if(!newMsg.trim())return;
     const nm=[...messages,{from:selectedMember,text:newMsg.trim(),date:new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),day:new Date().toLocaleDateString("fr-FR")}].slice(-100);
@@ -423,8 +411,7 @@ export default function App(){
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:"1rem"}}>
           <div style={{background:"#fff",borderRadius:24,padding:"1.5rem",width:"100%",maxWidth:380,maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:40,marginBottom:6}}>📊</div><h3 style={{fontWeight:700,fontSize:18,color:"#1a1a2e",margin:"0 0 4px"}}>Bilan de la semaine</h3><p style={{fontSize:13,color:"#aaa",margin:0}}>Vendredi soir — résumé familial</p></div>
-            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 10px"}}>🏅 Points & tâches</p>{Object.keys(profiles).map(m=>{const stat=recap.memberStats[m];const c=pc(m);return(<div key={m} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,padding:"8px",background:"#fff",borderRadius:12}}><span style={{fontSize:18}}>{pe(m)}</span><span style={{fontSize:13,fontWeight:700,color:c,flex:1}}>{m}</span><span style={{fontSize:12,color:"#888"}}>{stat.total} tâche{stat.total>1?"s":""}</span><span style={{fontSize:13,fontWeight:700,color:c,marginLeft:8}}>{stat.pts} pts</span></div>);})}
-            </div>
+            <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 10px"}}>🏅 Points & tâches</p>{Object.keys(profiles).map(m=>{const stat=recap.memberStats[m];const c=pc(m);return(<div key={m} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,padding:"8px",background:"#fff",borderRadius:12}}><span style={{fontSize:18}}>{pe(m)}</span><span style={{fontSize:13,fontWeight:700,color:c,flex:1}}>{m}</span><span style={{fontSize:12,color:"#888"}}>{stat.total} tâche{stat.total>1?"s":""}</span><span style={{fontSize:13,fontWeight:700,color:c,marginLeft:8}}>{stat.pts} pts</span></div>);})}</div>
             <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>⚔️ Compétition Michel vs Gabrielle</p><div style={{display:"flex",justifyContent:"space-around",marginBottom:6}}><span style={{fontSize:14,fontWeight:700,color:pc("Michel")}}>{pe("Michel")} Michel : {recap.mS}</span><span style={{fontSize:14,fontWeight:700,color:pc("Gabrielle")}}>Gabrielle : {recap.gS} {pe("Gabrielle")}</span></div>{recap.winner?<p style={{fontSize:13,color:"#16A34A",fontWeight:700,textAlign:"center",margin:0}}>🏆 {recap.winner} est en tête !</p>:<p style={{fontSize:13,color:"#888",textAlign:"center",margin:0}}>Égalité !</p>}</div>
             <div style={{background:"#f5f5f7",borderRadius:16,padding:"12px",marginBottom:12}}><p style={{fontWeight:700,fontSize:14,color:"#1a1a2e",margin:"0 0 8px"}}>🏆 Challenges personnels</p>{KIDS.map(kid=>{const kc=recap.kidsChallenge[kid];return(<div key={kid} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,padding:"6px 8px",background:"#fff",borderRadius:10}}><span style={{fontSize:16}}>{pe(kid)}</span><span style={{fontSize:13,fontWeight:600,color:pc(kid),flex:1}}>{kid}</span><span style={{fontSize:12,color:"#888"}}>{kc.done}/{kc.total}</span><span style={{fontSize:13,color:kc.success?"#16A34A":"#ef4444",fontWeight:700,marginLeft:8}}>{kc.success?"✅":"⏳"}</span></div>);})}</div>
             <div style={{background:"#FFF5F5",borderRadius:16,padding:"12px",marginBottom:12,border:"1.5px solid #FEE2E2"}}><p style={{fontWeight:700,fontSize:14,color:"#DC2626",margin:"0 0 8px"}}>😬 Gages de la semaine</p>{vendrediGages.length===0?<p style={{fontSize:13,color:"#888",margin:0}}>Aucun gage cette semaine ! 🎉</p>:vendrediGages.map((g,i)=>(<div key={i} style={{background:"#fff",borderRadius:10,padding:"8px 10px",marginBottom:6}}><p style={{fontSize:13,fontWeight:700,color:pc(g.membre_fautif),margin:"0 0 2px"}}>{pe(g.membre_fautif)} {g.membre_fautif}</p><p style={{fontSize:12,color:"#888",margin:0}}>a fait à la place des enfants : <strong>{g.tache}</strong></p><p style={{fontSize:11,color:"#ccc",margin:"2px 0 0"}}>→ Michel & Gabrielle ont un gage !</p></div>))}</div>
@@ -480,9 +467,11 @@ export default function App(){
             <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:color,width:`${SHARED_DAILY.length?(sharedDone/SHARED_DAILY.length)*100:0}%`,transition:"width 0.3s"}}/></div>
             {SHARED_DAILY.map(task=>{
               const key=`${today}|shared|${task}`;
+              const clickKey=`shared_${task}_${today}`;
               const timesToday=history.filter(h=>h.task===task&&h.dayKey===today&&h.type==="commune").length;
               const isDouble=DOUBLE_POINTS_TASKS.includes(task);
-              return(<div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}><div onClick={()=>claimShared(task)} style={{width:26,height:26,borderRadius:13,border:`2px solid ${color}44`,background:`${color}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer"}}><Plus color={color}/></div><span onClick={()=>claimShared(task)} style={{fontSize:14,color:"#1a1a2e",flex:1,cursor:"pointer"}}>{task}</span>{isDouble&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:99,background:"#FEF9C3",color:"#A16207",fontWeight:600}}>×2 pts</span>}{timesToday>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${color}22`,color,fontWeight:600}}>×{timesToday}</span>}<PhotoButton taskKey={key} photoUrls={photos[key]||[]} isUploading={!!uploadingKeys[key]} onUpload={handlePhotoUpload} onView={handleViewPhoto}/></div>);
+              const isBlocked=!!blockedKeys[clickKey];
+              return(<div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}><div onClick={()=>claimShared(task)} style={{width:26,height:26,borderRadius:13,border:`2px solid ${isBlocked?"#ccc":color+"44"}`,background:isBlocked?"#f0f0f0":`${color}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:isBlocked?"default":"pointer",opacity:isBlocked?0.5:1}}><Plus color={isBlocked?"#ccc":color}/></div><span onClick={()=>claimShared(task)} style={{fontSize:14,color:"#1a1a2e",flex:1,cursor:isBlocked?"default":"pointer",opacity:isBlocked?0.5:1}}>{task}</span>{isDouble&&<span style={{fontSize:10,padding:"2px 7px",borderRadius:99,background:"#FEF9C3",color:"#A16207",fontWeight:600}}>×2 pts</span>}{timesToday>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:`${color}22`,color,fontWeight:600}}>×{timesToday}</span>}<PhotoButton taskKey={key} photoUrls={photos[key]||[]} isUploading={!!uploadingKeys[key]} onUpload={handlePhotoUpload} onView={handleViewPhoto}/></div>);
             })}
           </div>
 
@@ -512,12 +501,18 @@ export default function App(){
           <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:0}}>Maman &amp; Papou</p><span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:"#f0f0f5",color:"#888",fontWeight:500}}>{coupleDone}/{COUPLE_POOL.length} semaine</span></div>
             <div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:"#5DCAA5",width:`${COUPLE_POOL.length?(coupleDone/COUPLE_POOL.length)*100:0}%`,transition:"width 0.3s"}}/></div>
-            {COUPLE_POOL.map(task=>{const key=`${wk}|couple|${task}`;const timesThisWeek=history.filter(h=>h.task===task&&h.weekKey===wk&&h.type==="couple").length;return(<div key={task} onClick={()=>claimCouple(task)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7",cursor:isCouple?"pointer":"default",opacity:!isCouple?0.5:1}}><div style={{width:26,height:26,borderRadius:13,border:`2px solid ${isCouple?color+"44":"#ddd"}`,background:isCouple?`${color}22`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{isCouple&&<Plus color={color}/>}</div><span style={{fontSize:14,color:"#1a1a2e",flex:1}}>{task}</span>{timesThisWeek>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:"#DCFCE7",color:"#16A34A",fontWeight:600}}>×{timesThisWeek}</span>}{!isCouple&&<span style={{fontSize:11,color:"#ccc"}}>Maman/Papou</span>}<PhotoButton taskKey={key} photoUrls={photos[key]||[]} isUploading={!!uploadingKeys[key]} onUpload={handlePhotoUpload} onView={handleViewPhoto}/></div>);})}
+            {COUPLE_POOL.map(task=>{
+              const key=`${wk}|couple|${task}`;
+              const clickKey=`couple_${task}_${wk}`;
+              const timesThisWeek=history.filter(h=>h.task===task&&h.weekKey===wk&&h.type==="couple").length;
+              const isBlocked=!!blockedKeys[clickKey];
+              return(<div key={task} onClick={()=>claimCouple(task)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7",cursor:isCouple&&!isBlocked?"pointer":"default",opacity:!isCouple||isBlocked?0.5:1}}><div style={{width:26,height:26,borderRadius:13,border:`2px solid ${isCouple&&!isBlocked?color+"44":"#ddd"}`,background:isCouple&&!isBlocked?`${color}22`:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{isCouple&&!isBlocked&&<Plus color={color}/>}</div><span style={{fontSize:14,color:"#1a1a2e",flex:1}}>{task}</span>{timesThisWeek>0&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:99,background:"#DCFCE7",color:"#16A34A",fontWeight:600}}>×{timesThisWeek}</span>}{!isCouple&&<span style={{fontSize:11,color:"#ccc"}}>Maman/Papou</span>}<PhotoButton taskKey={key} photoUrls={photos[key]||[]} isUploading={!!uploadingKeys[key]} onUpload={handlePhotoUpload} onView={handleViewPhoto}/></div>);
+            })}
           </div>
 
           {Object.keys(profiles).filter(m=>(PERSONAL_TASKS[m]||[]).length>0).map(pm=>{
             const pmTasks=PERSONAL_TASKS[pm]||[];const pmDone=pmTasks.filter(t=>done[`${wk}|personal|${pm}|${t}`]).length;const pmC=pc(pm);const pmE=pe(pm);const isOwn=pm===selectedMember;
-            return(<div key={pm} style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:isOwn?`2px solid ${pmC}44`:"none"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:30,height:30,borderRadius:15,background:`${pmC}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>{pmE}</div><p style={{fontWeight:700,fontSize:15,color:pmC,margin:0}}>{pm}{isOwn?" ✓":""}</p></div><span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:`${pmC}15`,color:pmC,fontWeight:700}}>{pmDone}/{pmTasks.length}</span></div><div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:pmC,width:`${pmTasks.length?(pmDone/pmTasks.length)*100:0}%`,transition:"width 0.3s"}}/></div>{pmTasks.map(task=>{const key=`${wk}|personal|${pm}|${task}`;const checked=!!done[key];return(<div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}><div onClick={()=>isOwn&&togglePersonal(pm,task)} style={{width:26,height:26,borderRadius:13,border:checked?"none":`2px solid ${isOwn?pmC+"44":"#ddd"}`,background:checked?pmC:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:isOwn?"pointer":"default"}}>{checked&&<Tick/>}</div><span onClick={()=>isOwn&&togglePersonal(pm,task)} style={{fontSize:14,color:checked?"#bbb":"#1a1a2e",textDecoration:checked?"line-through":"none",flex:1,cursor:isOwn?"pointer":"default",opacity:!isOwn&&!checked?0.5:1}}>{task}</span><PhotoButton taskKey={key} photoUrls={photos[key]||[]} isUploading={!!uploadingKeys[key]} onUpload={handlePhotoUpload} onView={handleViewPhoto}/></div>);})}</div>);
+            return(<div key={pm} style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:isOwn?`2px solid ${pmC}44`:"none"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:30,height:30,borderRadius:15,background:`${pmC}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17}}>{pmE}</div><p style={{fontWeight:700,fontSize:15,color:pmC,margin:0}}>{pm}{isOwn?" ✓":""}</p></div><span style={{fontSize:11,padding:"3px 9px",borderRadius:99,background:`${pmC}15`,color:pmC,fontWeight:700}}>{pmDone}/{pmTasks.length}</span></div><div style={{height:5,borderRadius:3,background:"#f0f0f5",marginBottom:10,overflow:"hidden"}}><div style={{height:"100%",borderRadius:3,background:pmC,width:`${pmTasks.length?(pmDone/pmTasks.length)*100:0}%`,transition:"width 0.3s"}}/></div>{pmTasks.map(task=>{const doneKey=`${wk}|personal|${pm}|${task}`;const checked=!!done[doneKey];const clickKey=`personal_${pm}_${task}_${wk}`;const isBlocked=!!blockedKeys[clickKey];return(<div key={task} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #f5f5f7"}}><div onClick={()=>isOwn&&!isBlocked&&togglePersonal(pm,task)} style={{width:26,height:26,borderRadius:13,border:checked?"none":`2px solid ${isOwn&&!isBlocked?pmC+"44":"#ddd"}`,background:checked?pmC:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:isOwn&&!isBlocked?"pointer":"default",opacity:isBlocked?0.5:1}}>{checked&&<Tick/>}</div><span onClick={()=>isOwn&&!isBlocked&&togglePersonal(pm,task)} style={{fontSize:14,color:checked?"#bbb":"#1a1a2e",textDecoration:checked?"line-through":"none",flex:1,cursor:isOwn&&!isBlocked?"pointer":"default",opacity:(!isOwn&&!checked)||isBlocked?0.5:1}}>{task}</span><PhotoButton taskKey={doneKey} photoUrls={photos[doneKey]||[]} isUploading={!!uploadingKeys[doneKey]} onUpload={handlePhotoUpload} onView={handleViewPhoto}/></div>);})}</div>);
           })}
 
           {KIDS.map(kid=>{const kp=kidChallenge(kid);const kC=pc(kid);const kE=pe(kid);const isOwn=kid===selectedMember;return(<div key={kid} style={{background:kp.unlocked?`${kC}15`:"#fff",border:kp.unlocked?`2px solid ${kC}`:"1px solid #f0f0f5",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:20}}>{kp.unlocked?"🏆":"🎯"}</span><div style={{width:26,height:26,borderRadius:13,background:`${kC}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>{kE}</div><p style={{fontWeight:700,fontSize:14,color:kC,margin:0}}>Challenge {kid}{isOwn?" (moi)":""}</p><span style={{marginLeft:"auto",fontSize:12,color:kp.unlocked?kC:"#aaa",fontWeight:700}}>{kp.pct}%</span></div><div style={{height:8,borderRadius:4,background:"#f0f0f5",marginBottom:8,overflow:"hidden"}}><div style={{height:"100%",borderRadius:4,background:kC,width:`${kp.pct}%`,transition:"width 0.4s"}}/></div><p style={{fontSize:12,color:kp.unlocked?kC:"#aaa",margin:"0 0 2px",fontWeight:kp.unlocked?700:400}}>{kp.unlocked?"Débloqué !":"Récompense si toutes les tâches sont faites :"}</p><p style={{fontSize:13,color:"#1a1a2e",margin:0}}>{rewards[kid]||"Récompense à définir"}</p>{kp.unlocked&&isOwn&&!unlockedShown[kid]&&<button onClick={()=>dismissUnlock(kid)} style={{marginTop:8,background:kC,color:"#fff",border:"none",borderRadius:12,padding:"6px 16px",fontWeight:700,fontSize:13,cursor:"pointer"}}>OK !</button>}</div>);})}
