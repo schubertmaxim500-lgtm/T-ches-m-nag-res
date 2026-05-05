@@ -123,6 +123,9 @@ export default function App(){
   const [initTask,setInitTask]=useState(INITIATIVE_TASKS[0]);
   const [initRoom,setInitRoom]=useState(ROOMS[0]);
   const [initCustom,setInitCustom]=useState("");
+  const [exceptionalTasks,setExceptionalTasks]=useState([]);
+  const [showExceptionalForm,setShowExceptionalForm]=useState(false);
+  const [newExceptionalTask,setNewExceptionalTask]=useState("");
   const [messages,setMessages]=useState([]);
   const [newMsg,setNewMsg]=useState("");
   const [loading,setLoading]=useState(true);
@@ -151,7 +154,8 @@ export default function App(){
 
   async function resetWeek(){
     const nd={};const nu={};const np={};
-    await dbSet({done:nd,points:np,unlocked:nu,table_rota:{},initiative:null});
+    await dbSet({done:nd,points:np,unlocked:nu,table_rota:{},initiative:null,exceptional_tasks:[]});
+    setExceptionalTasks([]);
     sendPushNotification("🏠 FamilyChores","Nouvelle semaine ! Les points sont remis à zéro 🚀");
     // Rechargement complet pour vider la mémoire
     setTimeout(()=>window.location.reload(),500);
@@ -167,6 +171,7 @@ export default function App(){
         const p=d.points||{};setPoints(p);pointsRef.current=p;
         if(d.rewards&&Object.keys(d.rewards).length>0)setRewards(d.rewards);
         setTableRota(d.table_rota||{});setInitiative(d.initiative||null);
+        setExceptionalTasks(d.exceptional_tasks||[]);
         setMessages(d.messages||[]);setUnlockedShown(d.unlocked||{});
       }
       const np=await dbLoadPhotos(weekKey());setPhotos(np);
@@ -354,6 +359,38 @@ export default function App(){
     sendPushNotification(`🏆 ${member} a terminé l'initiative !`,`${initiative.task} (+2 pts)`);
   }
   function cancelInitiative(){setInitiative(null);dbSet({initiative:null});}
+
+  // Tâches exceptionnelles
+  const IS_PREMIUM=true; // TODO: remplacer par vrai check achat
+  const MAX_EXCEPTIONAL_FREE=2;
+  function canAddExceptional(){
+    const activeCount=exceptionalTasks.filter(t=>!t.completedBy).length;
+    if(IS_PREMIUM)return true;
+    return activeCount<MAX_EXCEPTIONAL_FREE;
+  }
+  function postExceptionalTask(){
+    if(!newExceptionalTask.trim())return;
+    if(!canAddExceptional())return;
+    const task={id:Date.now(),task:newExceptionalTask.trim(),postedBy:selectedMember,postedAt:new Date().toLocaleDateString("fr-FR"),completedBy:null,completedAt:null};
+    const updated=[...exceptionalTasks,task];
+    setExceptionalTasks(updated);dbSet({exceptional_tasks:updated});
+    setNewExceptionalTask("");setShowExceptionalForm(false);
+    sendPushNotification(`⚡ Tâche exceptionnelle de ${selectedMember} !`,`${newExceptionalTask.trim()} — 5 pts à gagner !`);
+  }
+  function completeExceptionalTask(id){
+    const updated=exceptionalTasks.map(t=>t.id===id?{...t,completedBy:selectedMember,completedAt:new Date().toLocaleDateString("fr-FR")}:t);
+    const task=exceptionalTasks.find(t=>t.id===id);
+    const np={...pointsRef.current,[selectedMember]:(pointsRef.current[selectedMember]||0)+5};
+    const nh=addHist({member:selectedMember,task:`⚡ ${task.task}`,date:new Date().toLocaleDateString("fr-FR"),dayKey:today,weekKey:wk,type:"exceptionnel"});
+    setExceptionalTasks(updated);setPoints(np);pointsRef.current=np;setHistory(nh);historyRef.current=nh;
+    dbSet({exceptional_tasks:updated,points:np,history:nh});
+    vibrate();
+    sendPushNotification(`🏆 ${selectedMember} a terminé une tâche exceptionnelle !`,`${task.task} (+5 pts)`);
+  }
+  function deleteExceptionalTask(id){
+    const updated=exceptionalTasks.filter(t=>t.id!==id);
+    setExceptionalTasks(updated);dbSet({exceptional_tasks:updated});
+  }
   function sendMessage(){
     if(!newMsg.trim())return;
     const nm=[...messages,{from:selectedMember,text:newMsg.trim(),date:new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),day:new Date().toLocaleDateString("fr-FR")}].slice(-100);
@@ -380,7 +417,7 @@ export default function App(){
   const isCouple=COUPLE.includes(selectedMember);const isKid=KIDS.includes(selectedMember);
   const yday=yesterdayKey();
   const filteredHist=history.filter(h=>{if(histFilter==="today")return h.dayKey===today;if(histFilter==="yesterday")return h.dayKey===yday;if(histFilter==="week")return h.weekKey===wk;return true;});
-  const typeBadge=(type)=>{const map={commune:{bg:"#EDE9FE",c:"#7C3AED"},perso:{bg:"#E0F2FE",c:"#0284C7"},couple:{bg:"#DCFCE7",c:"#16A34A"},initiative:{bg:"#FEF9C3",c:"#A16207"},hebdo:{bg:"#f0f0f5",c:"#888"}};const x=map[type]||map.hebdo;return{fontSize:10,padding:"2px 7px",borderRadius:99,background:x.bg,color:x.c,fontWeight:600,whiteSpace:"nowrap"};};
+  const typeBadge=(type)=>{const map={commune:{bg:"#EDE9FE",c:"#7C3AED"},perso:{bg:"#E0F2FE",c:"#0284C7"},couple:{bg:"#DCFCE7",c:"#16A34A"},initiative:{bg:"#FEF9C3",c:"#A16207"},exceptionnel:{bg:"#FEE2E2",c:"#DC2626"},hebdo:{bg:"#f0f0f5",c:"#888"}};const x=map[type]||map.hebdo;return{fontSize:10,padding:"2px 7px",borderRadius:99,background:x.bg,color:x.c,fontWeight:600,whiteSpace:"nowrap"};};
   const maxPoints=Math.max(...Object.keys(profiles).map(m=>points[m]||0),1);
   const setter=whoSetsTableToday();const clearer=whoClearsTableToday();const tableSchedule=getTableScheduleForWeek();
 
@@ -496,6 +533,34 @@ export default function App(){
             {!initiative&&!showInitiativeForm&&<p style={{fontSize:13,color:"#aaa",margin:0}}>Aucune initiative en cours.</p>}
             {showInitiativeForm&&(<div style={{display:"flex",flexDirection:"column",gap:10}}><select value={initTask} onChange={e=>setInitTask(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>{INITIATIVE_TASKS.map(t=><option key={t}>{t}</option>)}</select>{initTask==="Ranger une pièce"&&<select value={initRoom} onChange={e=>setInitRoom(e.target.value)} style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa"}}>{ROOMS.map(r=><option key={r}>{r}</option>)}</select>}{initTask==="Autre (décrire)"&&<input value={initCustom} onChange={e=>setInitCustom(e.target.value)} placeholder="Décris la tâche..." style={{fontSize:14,padding:"10px",borderRadius:12,border:"1.5px solid #eee",background:"#fafafa",fontFamily:"inherit"}}/>}<div style={{display:"flex",gap:8}}><button onClick={()=>setShowInitiativeForm(false)} style={{flex:1,background:"#f5f5f7",border:"none",borderRadius:12,padding:"10px",fontWeight:600,fontSize:13,cursor:"pointer"}}>Annuler</button><button onClick={postInitiative} style={{flex:1,background:"#F59E0B",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer"}}>Poster !</button></div></div>)}
             {initiative&&(<div><div style={{background:"#FEFCE8",borderRadius:14,padding:"12px",marginBottom:10}}><p style={{fontWeight:700,fontSize:14,color:"#92400E",margin:"0 0 4px"}}>📋 {initiative.task}</p><p style={{fontSize:12,color:"#aaa",margin:0}}>Posté par {initiative.postedBy} · {initiative.postedAt}</p>{initiative.acceptedBy&&<p style={{fontSize:12,color:pc(initiative.acceptedBy),fontWeight:600,margin:"4px 0 0"}}>✋ Pris en charge par {initiative.acceptedBy}</p>}</div>{!initiative.acceptedBy&&selectedMember!==initiative.postedBy&&<button onClick={acceptInitiative} style={{width:"100%",background:color,color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Je prends en charge !</button>}{!initiative.acceptedBy&&selectedMember===initiative.postedBy&&<button onClick={completeInitiative} style={{width:"100%",background:"#10B981",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>J'ai fait la tâche ! (+2 pts)</button>}{initiative.acceptedBy===selectedMember&&<button onClick={completeInitiative} style={{width:"100%",background:"#10B981",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8}}>Tâche terminée ! (+2 pts)</button>}{(isCouple||initiative.postedBy===selectedMember)&&<button onClick={cancelInitiative} style={{width:"100%",background:"#f5f5f7",color:"#aaa",border:"none",borderRadius:12,padding:"8px",fontWeight:600,fontSize:12,cursor:"pointer"}}>Annuler</button>}</div>)}
+          </div>
+
+          <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a",border:"1.5px solid #FEE2E2"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <div><p style={{fontWeight:700,fontSize:15,color:"#1a1a2e",margin:"0 0 2px"}}>⚡ Tâches Exceptionnelles <span style={{fontSize:12,color:"#DC2626",fontWeight:600,marginLeft:6}}>+5 pts</span></p><p style={{fontSize:11,color:"#aaa",margin:0}}>Assignées par Maman ou Papou</p></div>
+              {isCouple&&!showExceptionalForm&&(<button onClick={()=>{if(!canAddExceptional()){alert(`Version gratuite : maximum ${MAX_EXCEPTIONAL_FREE} tâches actives. Passe en Premium pour en ajouter plus !`);return;}setShowExceptionalForm(true);}} style={{fontSize:12,padding:"6px 14px",borderRadius:99,background:"#FEE2E2",color:"#DC2626",border:"none",fontWeight:700,cursor:"pointer"}}>+ Assigner</button>)}
+            </div>
+            {!isCouple&&exceptionalTasks.filter(t=>!t.completedBy).length===0&&<p style={{fontSize:13,color:"#aaa",margin:0}}>Aucune tâche exceptionnelle en cours.</p>}
+            {isCouple&&!showExceptionalForm&&exceptionalTasks.length===0&&<p style={{fontSize:13,color:"#aaa",margin:0}}>Aucune tâche assignée cette semaine.</p>}
+            {!IS_PREMIUM&&isCouple&&(<p style={{fontSize:11,color:"#aaa",margin:"0 0 8px"}}>Version gratuite : {exceptionalTasks.filter(t=>!t.completedBy).length}/{MAX_EXCEPTIONAL_FREE} tâches actives</p>)}
+            {showExceptionalForm&&(<div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:10}}><input value={newExceptionalTask} onChange={e=>setNewExceptionalTask(e.target.value)} placeholder="Décris la tâche à réaliser..." style={{fontSize:14,padding:"10px 12px",borderRadius:12,border:"1.5px solid #FEE2E2",background:"#FFF5F5",fontFamily:"inherit"}}/><div style={{display:"flex",gap:8}}><button onClick={()=>{setShowExceptionalForm(false);setNewExceptionalTask("");}} style={{flex:1,background:"#f5f5f7",border:"none",borderRadius:12,padding:"10px",fontWeight:600,fontSize:13,cursor:"pointer"}}>Annuler</button><button onClick={postExceptionalTask} disabled={!newExceptionalTask.trim()} style={{flex:1,background:"#DC2626",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",opacity:newExceptionalTask.trim()?1:0.5}}>Assigner !</button></div></div>)}
+            {exceptionalTasks.map(task=>{
+              const isCompleted=!!task.completedBy;
+              const canComplete=KIDS.includes(selectedMember)&&!isCompleted;
+              const canDelete=isCouple&&!isCompleted;
+              return(<div key={task.id} style={{background:isCompleted?"#F0FDF4":"#FFF5F5",borderRadius:14,padding:"12px",marginBottom:8,border:`1.5px solid ${isCompleted?"#BBF7D0":"#FEE2E2"}`}}>
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}>
+                  <div style={{flex:1}}>
+                    <p style={{fontWeight:700,fontSize:14,color:isCompleted?"#16A34A":"#DC2626",margin:"0 0 4px"}}>⚡ {task.task}</p>
+                    <p style={{fontSize:12,color:"#aaa",margin:0}}>Assignée par {task.postedBy} · {task.postedAt}</p>
+                    {isCompleted&&<p style={{fontSize:12,color:"#16A34A",fontWeight:600,margin:"4px 0 0"}}>✅ Réalisée par {task.completedBy} · {task.completedAt}</p>}
+                  </div>
+                  {canDelete&&<button onClick={()=>deleteExceptionalTask(task.id)} style={{width:28,height:28,borderRadius:8,background:"#FEE2E2",border:"none",color:"#DC2626",fontSize:16,cursor:"pointer",flexShrink:0}}>✕</button>}
+                </div>
+                {canComplete&&(<button onClick={()=>completeExceptionalTask(task.id)} style={{width:"100%",background:"#DC2626",color:"#fff",border:"none",borderRadius:12,padding:"10px",fontWeight:700,fontSize:13,cursor:"pointer",marginTop:8}}>J'ai réalisé cette tâche ! (+5 pts)</button>)}
+                {!isCompleted&&!canComplete&&!isCouple&&<p style={{fontSize:12,color:"#aaa",margin:"6px 0 0",textAlign:"center"}}>En attente de réalisation…</p>}
+              </div>);
+            })}
           </div>
 
           <div style={{background:"#fff",borderRadius:20,padding:"1rem",marginBottom:14,boxShadow:"0 1px 8px #0000000a"}}>
